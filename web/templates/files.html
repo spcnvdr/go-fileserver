@@ -1,0 +1,73 @@
+{{ define "title" }}{{.Title}}{{ end }}
+
+{{ define "content" }}
+    <h2>{{.Title}}</h2>
+    <p>
+        <form class="pure-form"
+            enctype="multipart/form-data"
+            action="/upload"
+            method="POST">
+            <fieldset>
+                <legend>Upload a new file</legend>
+                <input type="hidden" id="directory" type="text" name="directory" value="{{ .Directory }}">
+                <input type="file" placeholder="Filename" name="file-upload">
+                <button type="submit" class="pure-button pure-button-primary">Upload</button>
+            </fieldset>
+        </form>
+    </p>
+    {{ if eq .Directory "/" }}
+        <p></p>
+    {{ else }}
+    <p>
+        <a class="pure-button" href="/view?dir={{ .Parent }}">To Parent Directory</a>
+    </p>
+    {{ end }}
+    <p>
+    <table class="pure-table pure-table-bordered">
+        <thead>
+            <tr>
+                <th>Filename</th>
+                <th>Size</th>
+                <th>Mode</th>
+                <th>Last Modified</th>
+                <th>Delete</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Files}}
+                <tr>
+                    <td>
+                        {{ if .IsDir }}
+                            {{ if eq $.Directory  "/" }}
+                                <a href="/view?dir={{ .Name }}">{{ .Name }}/</a>
+                            {{ else }}
+                                <a href="/view?dir={{ $.Directory }}/{{ .Name }}">{{ .Name }}/</a>
+                            {{ end }}
+                        {{ else }}
+                            {{ if eq $.Directory  "/" }}
+                                <a download href="../../files/{{ .Name }}">{{ .Name }}</a>
+                                
+                            {{ else }}
+                                <a download href="../../files/{{ $.Directory }}/{{ .Name }}">{{ .Name }}</a>
+                            {{ end }}
+                        {{ end }}
+                    </td>
+                    <td>{{ .Size }}</td>
+                    <td>{{ .Mode }}</td>
+                    <td>{{ .Date}}</td>
+                    <td>
+                        <form action="/delete" method="POST" class="form-example">
+                            <div>
+                                <input type="hidden" id="directory" type="text" name="directory" value="{{ $.Directory }}">
+                                <input type="hidden" id="file" type="file" name="filename" value="{{ .Name }}">
+                                <input type="submit" value="Delete">
+                            </div>
+                        </form>
+                  </td>
+                </tr>
+            {{end}}
+        </tbody>
+    </table>
+    </p>
+            
+{{ end }}
