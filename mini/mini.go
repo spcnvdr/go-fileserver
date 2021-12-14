@@ -1,4 +1,10 @@
-// https://gist.github.com/joyrexus/ff9be7a1c3769a84360f
+/****************************************************************************
+ * This is a simple Go HTTP file server that allows anyone to upload or     *
+ * download files from a specified directory. To change the directory that  *
+ * files are served from, set the FILE_PATH constant to the preferred       *
+ * directory. Defaults to serving on the public IP address on port 8080.    *
+ * To view: http://localhost:8080                                           *
+ ****************************************************************************/
 package main
 
 import (
@@ -17,29 +23,32 @@ import (
 	"time"
 )
 
-const Version = "server 0.0.1"
+const Version = "mini server 0.0.1"
 
 /*
-File a small struct to hold information about a file that can be easily
+File: a small struct to hold information about a file that can be easily
 displayed in templates
 */
 type File struct {
-	Name  string // File name
-	Size  string // File size in bytes
-	Mode  string // Permissions
-	Date  string // Last modified date
-	IsDir bool   // Is this a directory?
+	Name  string
+	Size  string
+	Mode  string
+	Date  string
+	IsDir bool
 }
 
-// Files holds information about all the files in the current directory
+/* Files is a slice holding information about each file in the destination
+directory */
 type Files []File
 
-// Variables passed to the HTML template
+/*
+Context is the struct containing all data passed to the template
+*/
 type Context struct {
-	Title     string // HTML page title
+	Title     string
 	Directory string // Current directory user is in
 	Parent    string // The parent directory
-	Files     Files  // Slice of files in this directory
+	Files     Files
 }
 
 // global variables for command line arguments, only used in sprm()
@@ -47,7 +56,7 @@ var (
 	hostG     string
 	portG     string
 	versionG  bool
-	FILE_PATH string
+	FILE_PATH string // folder to serve files from
 )
 
 // init is automatically called at start, setup cmd line args
@@ -66,8 +75,6 @@ func init() {
 	flag.StringVar(&portG, "p", "8080", "Leave the original file unchanged")
 }
 
-//const FILE_PATH string = "../files"
-
 func main() {
 	// parse command line arguments
 	flag.Usage = printHelp
@@ -85,28 +92,33 @@ func main() {
 	}
 
 	FILE_PATH = flag.Arg(0)
-	// check path is a directory and we can access
+
+	// check path is a directory and can be accessed
 	if err := checkDir(FILE_PATH); err != nil {
 		log.Fatalf("%v", err)
 	}
 
-	// server our static resources
+	// serve our static resources without having to individually host each file
 	http.Handle("/files/", http.StripPrefix("/files/", http.FileServer(http.Dir(FILE_PATH))))
+
+	// setup our routes
 	http.HandleFunc("/", handleRoute)
-	http.HandleFunc("/delete", deleteFile)
 	http.HandleFunc("/upload", uploadFile)
 	http.HandleFunc("/view", viewDir)
+	http.HandleFunc("/delete", deleteFile)
 
-	serveing := hostG + ":" + portG
+	// start server
+	serving := hostG + ":" + portG
 	fmt.Printf("Serving on: %s\n", serving)
-	http.ListenAndServe(, nil)
+	http.ListenAndServe(serving, nil)
+	//http.ListenAndServeTLS(hostG+":"+portG, "cert.pem", "key.pem", nil)
 }
 
 /** printUsage - Print a simple usage message
  *
  */
 func printUsage() {
-	fmt.Fprintf(os.Stderr, "Usage: server [OPTION...] FOLDER...\n")
+	fmt.Fprintf(os.Stderr, "Usage: server [OPTION...] FOLDER\n")
 	fmt.Fprintf(os.Stderr, "Try `server --help' or `server -h' for more information\n")
 }
 
@@ -146,7 +158,7 @@ func checkDir(path string) error {
 }
 
 /*
-sizeToStr converts a file size to a human friendy string
+sizeToStr converts a file size in bytes to a human friendy string
 */
 func sizeToStr(b int64) string {
 	const unit = 1000
@@ -187,11 +199,136 @@ func fileFunc(path string) (Files, error) {
 }
 
 /*
-handleRoute is a helper function to redirect to the correct URL
+handleRoute redirects server root to /view?dir=/
 */
 func handleRoute(w http.ResponseWriter, r *http.Request) {
-	//displayFiles(w, r)
 	http.Redirect(w, r, "/view?dir=/", 302)
+}
+
+/*
+viewDir is called when a person clicks a directory link, displays files in
+the directory
+*/
+func viewDir(w http.ResponseWriter, r *http.Request) {
+	// the HTML template to display files
+	htmltemp := `<!DOCTYPE html>
+	<html lang="en" dir="ltr">
+		<head>
+			<meta charset="utf-8">
+			<meta name="viewport"
+				content="width=device-width, initial-scale=1, shrink-to-fit=no">
+			<meta name="description" content="Simple file server">
+			<title>{{ .Title }}</title>
+		</head>
+		<body>
+		<h2>{{.Title}}</h2>
+		<p>
+			<form enctype="multipart/form-data"
+				action="/upload"
+				method="POST">
+				<fieldset>
+					<legend>Upload a new file</legend>
+					<input type="hidden" id="directory" type="text" name="directory" value="{{ .Directory }}">
+					<input type="file" placeholder="Filename" name="file-upload">
+					<button type="submit">Upload</button>
+				</fieldset>
+			</form>
+		</p>
+		{{ if eq .Directory "/" }}
+			<p></p>
+		{{ else }}
+		<p>
+			<a href="/view?dir={{ .Parent }}">To Parent Directory</a>
+		</p>
+		{{ end }}
+		<p>
+		<table>
+			<thead>
+				<tr>
+					<th>Filename</th>
+					<th>Size</th>
+					<th>Mode</th>
+					<th>Last Modified</th>
+					<th>Delete</th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Files}}
+					<tr>
+						<td>
+							{{ if .IsDir }}
+								{{ if eq $.Directory  "/" }}
+									<a href="/view?dir={{ .Name }}">{{ .Name }}/</a>
+								{{ else }}
+									<a href="/view?dir={{ $.Directory }}/{{ .Name }}">{{ .Name }}/</a>
+								{{ end }}
+							{{ else }}
+								{{ if eq $.Directory  "/" }}
+									<a download href="../../files/{{ .Name }}">{{ .Name }}</a>
+									
+								{{ else }}
+									<a download href="../../files/{{ $.Directory }}/{{ .Name }}">{{ .Name }}</a>
+								{{ end }}
+							{{ end }}
+						</td>
+						<td>{{ .Size }}</td>
+						<td>{{ .Mode }}</td>
+						<td>{{ .Date}}</td>
+						<td>
+							<form action="/delete" method="POST" class="form-example">
+								<div>
+									<input type="hidden" id="directory" type="text" name="directory" value="{{ $.Directory }}">
+									<input type="hidden" id="file" type="file" name="filename" value="{{ .Name }}">
+									<input type="submit" value="Delete">
+								</div>
+							</form>
+					  </td>
+					</tr>
+				{{ end }}
+			</tbody>
+		</table>
+		</p>
+		</body>
+	</html>`
+
+	keys, ok := r.URL.Query()["dir"]
+
+	if !ok || len(keys[0]) < 1 {
+		log.Println("Url Param 'key' is missing")
+		http.Redirect(w, r, "/view?dir=/", 302)
+		return
+	}
+
+	dir := filepath.Clean(keys[0])
+
+	parent := path.Dir(dir)
+	if parent == "." {
+		parent = "/"
+	}
+
+	if strings.Contains(dir, "..") {
+		// prevent path traversal
+		http.Redirect(w, r, "/view?dir/", 302)
+		return
+	}
+
+	path := filepath.Clean(filepath.Join(FILE_PATH, dir))
+
+	// get list of files in directory
+	f, err := fileFunc(path)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Create data for templates, parse and execute template
+	title := "Directory listing for " + dir
+	context := Context{title, dir, parent, f}
+	templates := template.Must(template.New("foo").Parse(htmltemp))
+
+	if err := templates.Execute(w, context); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 /*
@@ -274,49 +411,4 @@ func deleteFile(w http.ResponseWriter, r *http.Request) {
 
 	// reload the current page
 	http.Redirect(w, r, "view?dir="+dir, 302)
-}
-
-/*
-viewDir is called when a person clicks a directory link, displays files in
-the directory
-*/
-func viewDir(w http.ResponseWriter, r *http.Request) {
-	keys, ok := r.URL.Query()["dir"]
-
-	if !ok || len(keys[0]) < 1 {
-		log.Println("Url Param 'key' is missing")
-		http.Redirect(w, r, "/view?dir=/", 302)
-		return
-	}
-
-	dir := filepath.Clean(keys[0])
-
-	parent := path.Dir(dir)
-	if parent == "." {
-		parent = "/"
-	}
-
-	if strings.Contains(dir, "..") {
-		// prevent path traversal
-		http.Redirect(w, r, "/view?dir/", 302)
-		return
-	}
-
-	path := filepath.Clean(filepath.Join(FILE_PATH, dir))
-
-	// get list of files in directory
-	f, err := fileFunc(path)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Create data for templates, parse and execute template
-	title := "Directory listing for " + dir
-	context := Context{title, dir, parent, f}
-	templates := template.Must(template.ParseFiles("../web/templates/layout.html", "../web/templates/files.html"))
-
-	if err := templates.Execute(w, context); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
 }
