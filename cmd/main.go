@@ -1,4 +1,3 @@
-// https://gist.github.com/joyrexus/ff9be7a1c3769a84360f
 package main
 
 import (
@@ -17,7 +16,7 @@ import (
 	"time"
 )
 
-const Version = "server 0.0.1"
+const Version = "go file server 0.0.1"
 
 /*
 File a small struct to hold information about a file that can be easily

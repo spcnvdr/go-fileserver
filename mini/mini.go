@@ -1,10 +1,7 @@
-/****************************************************************************
- * This is a simple Go HTTP file server that allows anyone to upload or     *
- * download files from a specified directory. To change the directory that  *
- * files are served from, set the FILE_PATH constant to the preferred       *
- * directory. Defaults to serving on the public IP address on port 8080.    *
- * To view: http://localhost:8080                                           *
- ****************************************************************************/
+/*************************************************************************
+ * Simple file server, defaults to seerving on port 8080. Allows file    *
+ * upload, download, and deletion. Folders can be deleted if empty.      *
+ *************************************************************************/
 package main
 
 import (
