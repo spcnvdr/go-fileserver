@@ -96,9 +96,9 @@ func main() {
 	http.HandleFunc("/upload", uploadFile)
 	http.HandleFunc("/view", viewDir)
 
-	serveing := hostG + ":" + portG
+	serving := hostG + ":" + portG
 	fmt.Printf("Serving on: %s\n", serving)
-	http.ListenAndServe(, nil)
+	http.ListenAndServe(serving, nil)
 }
 
 /** printUsage - Print a simple usage message
