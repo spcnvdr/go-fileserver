@@ -14,13 +14,12 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"time"
 )
 
-const Version = "mini server 0.0.1"
+const Version = "mini server 0.0.2"
 
 /*
 File: a small struct to hold information about a file that can be easily
@@ -297,8 +296,15 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 	}
 
 	dir := filepath.Clean(keys[0])
+	// Handle Windows paths
+	if dir == "\\" {
+		dir = "/"
+	}
 
-	parent := path.Dir(dir)
+	// Handle Windows paths
+	dir = strings.ReplaceAll(dir, "\\", "/")
+
+	parent := filepath.Dir(dir)
 	if parent == "." {
 		parent = "/"
 	}
