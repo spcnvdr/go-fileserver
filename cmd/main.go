@@ -288,13 +288,9 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 	}
 
 	dir := filepath.Clean(keys[0])
-	// Handle Windows paths
-	if dir == "\\" {
-		dir = "/"
-	}
 
-	// Windows paths wrecks things
-	dir = strings.ReplaceAll(dir, "\\", "/")
+	// Handle Windows paths
+	dir = filepath.ToSlash(dir)
 
 	parent := filepath.Dir(dir)
 	if parent == "." {
