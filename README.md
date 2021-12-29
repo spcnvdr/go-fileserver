@@ -5,14 +5,21 @@ files between computers on the same LAN? Simply run this program, give it a
 directory of files to serve, and navigate to the IP address and port number
 in the other computer's web browser to download, upload, or delete files. 
 
+The goal of this program is to be as portable and to use as few
+external dependencies as possible. I wanted to use only the standard library
+for this program. I also understand that this program could be cleaner if
+broken up into multiple files, but I wanted it to keep it in a single source
+file to make it easier to copy or send to other computers. 
+
 Note, folders can only be deleted if empty.
 
 **WARNING**
 
-This program does not have TLS or authentication yet so anyone on the LAN
-or network can download, delete, or manipulate your files as well as upload
-malicious files to the computer running this program. Only use on a secure 
-or trusted network. Adding TLS and simple authentication are in the works.
+While this server supports TLS and basic authentication, it may not be perfect.
+I would recommend only using it on a secure or trusted network. Pick a good 
+password when using basic authentication. Basic authentication is useless 
+without TLS enabled too! If possible, use your own TLS certs instead of 
+auto-generating self-signed certificates.
 
 **Defaults**
 
@@ -40,28 +47,15 @@ Serve up a directory of files
 
     ./main /home/user/files
 
+Generate self-signed TLS certs and serve directory
 
-**Mini**
+    ./main -t /home/user/files
 
-The mini directory contains a simplified version of this program that is a
-single Go file. The mini version does not depend on templates or CSS files. 
-It operates the same way, it is just more portable. 
+Set up basic auth with already generated TLS certs. Basic auth will 
+interactively prompt for a password to avoid storing a password 
+in .bash_history or other command line logs. 
 
-cd into mini directory
-
-    cd ./mini
-
-Build it
-
-    go build ./mini.go
-
-Get help
-
-    ./mini --help
-
-Or start serving files
-
-    ./mini /home/user/files
+    ./main -c cert.pem -k key.pem -u Bob /home/user/files
 
 **Contributing**
 
