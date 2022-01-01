@@ -3,7 +3,11 @@
 This is a simple file server written in Go. Have you ever wanted to transfer 
 files between computers on the same LAN? Simply run this program, give it a 
 directory of files to serve, and navigate to the IP address and port number
-in the other computer's web browser to download, upload, or delete files. 
+in the other computer's web browser to download, upload, or delete files.
+
+This program creates a web interface that allows users to download, upload, or
+delete files from the serving computer. Basic authentication and TLS is 
+supported and can be enabled on the command line. 
 
 The goal of this program is to be as portable and to use as few
 external dependencies as possible. I wanted to use only the standard library
@@ -21,9 +25,19 @@ password when using basic authentication. Basic authentication is useless
 without TLS enabled too! If possible, use your own TLS certs instead of 
 auto-generating self-signed certificates.
 
+**NOTE**
+
+If using a self-signed TLS certificate, you may see errors logged such as
+
+    http: TLS handshake error from 127.0.0.1:43434: remote error: tls: unknown certificate
+
+This error message can be safely ignored as long as you intended to use a 
+self-signed certificate. This error message is just informing you that the
+client received a self-signed certificate when visiting the web page.
+
 **Defaults**
 
-Default settings are to serve on all public IP's (0.0.0.0) on port 8080.
+Default settings are to serve on all IPv4 addresses (0.0.0.0) on port 8080.
 Can be changed with command line arguments
 
 
@@ -56,6 +70,17 @@ interactively prompt for a password to avoid storing a password
 in .bash_history or other command line logs. 
 
     ./main -c cert.pem -k key.pem -u Bob /home/user/files
+
+**Screenshots**
+
+Getting started:
+
+![Clone and build](./img/screenshot1.png)
+
+Open the URL given in the command line (or navigate to the given IP and port) 
+in the browser:
+
+![Go File Server Client Side](./img/screenshot2.png)
 
 **Contributing**
 

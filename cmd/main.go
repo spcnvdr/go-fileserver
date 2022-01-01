@@ -7,10 +7,8 @@ package main
 import (
 	"bufio"
 	"crypto/ecdsa"
-	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/sha512"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -32,7 +30,7 @@ import (
 	"time"
 )
 
-const Version = "mini server 0.0.3"
+const Version = "mini server 0.0.4"
 
 /*
 File: a small struct to hold information about a file that can be easily
@@ -58,20 +56,6 @@ type Context struct {
 	Directory string // Current directory user is in
 	Parent    string // The parent directory
 	Files     Files
-}
-
-// Used to generate self-signed TLS certificate and key, stolen
-func publicKey(priv interface{}) interface{} {
-	switch k := priv.(type) {
-	case *rsa.PrivateKey:
-		return &k.PublicKey
-	case *ecdsa.PrivateKey:
-		return &k.PublicKey
-	case ed25519.PrivateKey:
-		return k.Public().(ed25519.PublicKey)
-	default:
-		return nil
-	}
 }
 
 // global variables for command line arguments
@@ -131,7 +115,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Require folder to serve argument in future
+	// Require folder argument to serve
 	if len(flag.Args()) == 0 {
 		printUsage()
 		os.Exit(1)
@@ -157,20 +141,21 @@ func main() {
 	// if generating our own self-signed TLS cert/key
 	if TLS {
 		genKeys(HOST)
-		cert = "./cert.pem"
+		cert = "cert.pem"
 		key = "key.pem"
 	}
 
+	// User enabled basic auth, get password interactively
 	if USER != "" {
 		AUTH = true
 		PASS = getPass()
 	}
 
 	// serve our static resources without having to individually host each file
-	http.Handle("/files/", http.StripPrefix("/files/", staticAuth(http.FileServer(http.Dir(FILE_PATH)))))
+	http.Handle("/files/", http.StripPrefix("/files/", basicAuth(http.FileServer(http.Dir(FILE_PATH)))))
 
 	// setup our routes
-	http.HandleFunc("/", handleRoute)
+	http.HandleFunc("/", redirectRoot)
 	http.HandleFunc("/upload", uploadFile)
 	http.HandleFunc("/view", viewDir)
 	http.HandleFunc("/delete", deleteFile)
@@ -178,7 +163,7 @@ func main() {
 	// start server, bail if error
 	serving := HOST + ":" + PORT
 	if CERT != "" || TLS {
-		fmt.Printf("If using a self-signed certificate, ignore \"unknown certificate\" warnings\n")
+		fmt.Println(`If using a self-signed certificate, ignore "unknown certificate" warnings`)
 		fmt.Printf("\nServing on: https://%s\n", serving)
 		err := http.ListenAndServeTLS(serving, cert, key, nil)
 		log.Fatal(err)
@@ -272,10 +257,11 @@ func fileFunc(path string) (Files, error) {
 }
 
 /*
-staticAuth require authentication, if enabled on cmd line, to directly view
-static files.
+basicAuth require authentication, if enabled on cmd line, to directly view
+static files. This is basically a wrapper around Go's built in http.FileServer
+which enables basic auth to view the files hosted by http.FileServer. Handy..
 */
-func staticAuth(h http.Handler) http.Handler {
+func basicAuth(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if AUTH {
 			user, pass, ok := r.BasicAuth()
@@ -289,8 +275,8 @@ func staticAuth(h http.Handler) http.Handler {
 	})
 }
 
-// handleRoute redirects server root to /view?dir=/.
-func handleRoute(w http.ResponseWriter, r *http.Request) {
+// redirectRoot redirects server root to /view?dir=/.
+func redirectRoot(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/view?dir=/", 302)
 }
 
@@ -399,9 +385,10 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 
 	dir := filepath.Clean(keys[0])
 
-	// Handle Windows paths
+	// Handle Windows paths, filepath is the OS independent way to handle paths
 	dir = filepath.ToSlash(dir)
 
+	// What is the parent for current folder?
 	parent := filepath.Dir(dir)
 	if parent == "." {
 		parent = "/"
@@ -413,6 +400,7 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// create real path from the server's root folder and navigated folder
 	path := filepath.Clean(filepath.Join(FILE_PATH, dir))
 
 	// get list of files in directory
@@ -453,6 +441,7 @@ func uploadFile(w http.ResponseWriter, r *http.Request) {
 
 	path := filepath.Clean(filepath.Join(FILE_PATH, dir, fileHeader.Filename))
 
+	// close uploaded file descriptor when done
 	defer file.Close()
 
 	// Create a new file in the correct directory
@@ -462,6 +451,7 @@ func uploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// close new file descriptor later
 	defer dst.Close()
 
 	// Copy the uploaded file to the filesystem
@@ -512,15 +502,14 @@ func deleteFile(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "view?dir="+dir, 302)
 }
 
-/* genKeys - Generate self-signed TLS certificate and key.
- * Shamelessly stolen from:
- * https://go.dev/src/crypto/tls/generate_cert.go
- */
+/*
+genKeys - Generate self-signed TLS certificate and key.
+Shamelessly stolen and modified from:
+https://go.dev/src/crypto/tls/generate_cert.go
+*/
 func genKeys(host string) {
-	var priv interface{}
-	var err error
 
-	priv, err = ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	priv, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 	if err != nil {
 		log.Fatalf("Failed to generate private key: %v", err)
 	}
@@ -538,7 +527,7 @@ func genKeys(host string) {
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
-			Organization: []string{"Mini File Server"},
+			Organization: []string{"Go File Server"},
 		},
 		NotBefore: notBefore,
 		NotAfter:  notAfter,
@@ -556,12 +545,12 @@ func genKeys(host string) {
 		}
 	}
 
-	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, publicKey(priv), priv)
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
 	if err != nil {
 		log.Fatalf("Failed to create certificate: %v", err)
 	}
 
-	// Write Cert to cert.pem
+	// Write cert to cert.pem
 	certOut, err := os.Create("cert.pem")
 	if err != nil {
 		log.Fatalf("Failed to open cert.pem for writing: %v", err)
