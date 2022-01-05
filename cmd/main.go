@@ -10,6 +10,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha512"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
@@ -30,7 +31,7 @@ import (
 	"time"
 )
 
-const Version = "mini server 0.0.4"
+const Version = "mini server 0.0.5"
 
 /*
 File: a small struct to hold information about a file that can be easily
@@ -70,6 +71,7 @@ var (
 	USER      string
 	PASS      string
 	FILE_PATH string // folder to serve files from
+	VERBOSE   bool
 )
 
 // init is automatically called at start, setup cmd line args
@@ -102,6 +104,10 @@ func init() {
 	// enable simple authentication
 	flag.StringVar(&USER, "user", "", "Enable authentication with this username")
 	flag.StringVar(&USER, "u", "", "Enable authentication with this username")
+
+	// enable verbose mode
+	flag.BoolVar(&VERBOSE, "verbose", false, "Enable verbose output")
+	flag.BoolVar(&VERBOSE, "v", false, "Enable verbose output")
 }
 
 func main() {
@@ -163,9 +169,29 @@ func main() {
 	// start server, bail if error
 	serving := HOST + ":" + PORT
 	if CERT != "" || TLS {
+		// Set TLS preferences
+		s := http.Server{
+			Addr: serving,
+			TLSConfig: &tls.Config{
+				MinVersion:               tls.VersionTLS12,
+				CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+				PreferServerCipherSuites: true,
+				CipherSuites: []uint16{
+					tls.TLS_AES_256_GCM_SHA384,
+					tls.TLS_CHACHA20_POLY1305_SHA256,
+					tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+					tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+					tls.TLS_AES_128_GCM_SHA256,
+					tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+					tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+					tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+				},
+			},
+		}
+
 		fmt.Println(`If using a self-signed certificate, ignore "unknown certificate" warnings`)
 		fmt.Printf("\nServing on: https://%s\n", serving)
-		err := http.ListenAndServeTLS(serving, cert, key, nil)
+		err := s.ListenAndServeTLS(cert, key)
 		log.Fatal(err)
 
 	} else {
@@ -187,14 +213,15 @@ func printHelp() {
 
 	fmt.Fprintf(os.Stderr, "Usage: server [OPTION...] FOLDER\n")
 	fmt.Fprintf(os.Stderr, "Serve the given folder via an HTTP server\n\n")
-	fmt.Fprintf(os.Stderr, "  -c, --cert                  Use the proided PEM cert for TLS, MUST use -c\n")
-	fmt.Fprintf(os.Stderr, "  -i, --ip                    IP address to server on; default 0.0.0.0\n")
-	fmt.Fprintf(os.Stderr, "  -k, --key                   Use provided PEM key for TLS, MUST use -k\n")
-	fmt.Fprintf(os.Stderr, "  -p, --port                  Port to serve on: default 8080\n")
-	fmt.Fprintf(os.Stderr, "  -t, --tls                   Generate and use self-signed TLS cert.\n")
-	fmt.Fprintf(os.Stderr, "  -u, --user                  Enable simple auth. with this username\n")
-	fmt.Fprintf(os.Stderr, "  -?, --help                  Show this help message\n")
-	fmt.Fprintf(os.Stderr, "  -V, --version               Print program version\n")
+	fmt.Fprintf(os.Stderr, "  -c, --cert                Use the proided PEM cert for TLS, MUST also use -k\n")
+	fmt.Fprintf(os.Stderr, "  -i, --ip                  IP address to server on; default 0.0.0.0\n")
+	fmt.Fprintf(os.Stderr, "  -k, --key                 Use provided PEM key for TLS, MUST also use -c\n")
+	fmt.Fprintf(os.Stderr, "  -p, --port                Port to serve on: default 8080\n")
+	fmt.Fprintf(os.Stderr, "  -t, --tls                 Generate and use self-signed TLS cert.\n")
+	fmt.Fprintf(os.Stderr, "  -u, --user                Enable basic auth. with this username\n")
+	fmt.Fprintf(os.Stderr, "  -v, --verbose             Enable verbose logging mode\n")
+	fmt.Fprintf(os.Stderr, "  -?, --help                Show this help message\n")
+	fmt.Fprintf(os.Stderr, "  -V, --version             Print program version\n")
 	fmt.Fprintf(os.Stderr, "\n")
 }
 
@@ -263,6 +290,10 @@ which enables basic auth to view the files hosted by http.FileServer. Handy..
 */
 func basicAuth(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if VERBOSE {
+			log.Printf("CLIENT: %s URI: %s\n", r.RemoteAddr, r.RequestURI)
+		}
+
 		if AUTH {
 			user, pass, ok := r.BasicAuth()
 			if !ok || (user != USER || !checkPass(pass, PASS)) {
@@ -293,6 +324,8 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 			<meta name="viewport"
 				content="width=device-width, initial-scale=1, shrink-to-fit=no">
 			<meta name="description" content="Simple file server">
+			<!-- prevent favicon requests -->
+			<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgo=">
 			<title>{{ .Title }}</title>
 		</head>
 		<body>
@@ -365,6 +398,10 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 		</p>
 		</body>
 	</html>`
+
+	if VERBOSE {
+		log.Printf("CLIENT: %s URI: %s\n", r.RemoteAddr, r.RequestURI)
+	}
 
 	if AUTH {
 		user, pass, ok := r.BasicAuth()
@@ -462,6 +499,10 @@ func uploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if VERBOSE {
+		log.Printf("CLIENT: %s file upload: %s\n", r.RemoteAddr, fileHeader.Filename)
+	}
+
 	// reload the current page on successful upload
 	http.Redirect(w, r, "view?dir="+dir, 302)
 }
@@ -497,6 +538,10 @@ func deleteFile(w http.ResponseWriter, r *http.Request) {
 
 	// ignore errors
 	os.Remove(path)
+
+	if VERBOSE {
+		log.Printf("CLIENT: %s deleted file: %s\n", r.RemoteAddr, path)
+	}
 
 	// reload the current page
 	http.Redirect(w, r, "view?dir="+dir, 302)
