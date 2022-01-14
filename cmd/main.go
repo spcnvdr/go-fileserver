@@ -1,7 +1,8 @@
-/*************************************************************************
- * Simple file server, defaults to seerving on port 8080. Allows file    *
- * upload, download, and deletion. Folders can be deleted if empty.      *
- *************************************************************************/
+/*
+Simple HTTP/S file server, defaults to serving on port 8080. Allows file
+upload, download, and deletion. Folders can be deleted if empty.
+Run with --help for full options
+*/
 package main
 
 import (
@@ -61,17 +62,17 @@ type Context struct {
 
 // global variables for command line arguments
 var (
-	HOST      string
-	PORT      string
-	VERSION   bool
-	TLS       bool
-	CERT      string
-	KEY       string
 	AUTH      bool
-	USER      string
+	CERT      string
+	HOST      string
+	KEY       string
 	PASS      string
-	FILE_PATH string // folder to serve files from
+	PORT      string
+	TLS       bool
+	USER      string
 	VERBOSE   bool
+	VERSION   bool
+	FILE_PATH string // folder to serve files from
 )
 
 // init is automatically called at start, setup cmd line args
@@ -111,7 +112,7 @@ func init() {
 }
 
 func main() {
-	// parse command line arguments
+	// setup and parse command line arguments
 	var cert, key string
 	flag.Usage = printHelp
 	flag.Parse()
@@ -121,7 +122,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Require folder argument to serve
+	// Require folder argument to run
 	if len(flag.Args()) == 0 {
 		printUsage()
 		os.Exit(1)
@@ -204,14 +205,14 @@ func main() {
 
 // printUsage - Print a simple usage message.
 func printUsage() {
-	fmt.Fprintf(os.Stderr, "Usage: server [OPTION...] FOLDER\n")
-	fmt.Fprintf(os.Stderr, "Try `server --help' or `server -h' for more information\n")
+	fmt.Fprintf(os.Stderr, "Usage: mini [OPTION...] FOLDER\n")
+	fmt.Fprintf(os.Stderr, `Try 'mini --help' or 'mini -h' for more information\n`)
 }
 
 // printHelp - Print a custom detailed help message.
 func printHelp() {
 
-	fmt.Fprintf(os.Stderr, "Usage: server [OPTION...] FOLDER\n")
+	fmt.Fprintf(os.Stderr, "Usage: mini [OPTION...] FOLDER\n")
 	fmt.Fprintf(os.Stderr, "Serve the given folder via an HTTP server\n\n")
 	fmt.Fprintf(os.Stderr, "  -c, --cert                Use the proided PEM cert for TLS, MUST also use -k\n")
 	fmt.Fprintf(os.Stderr, "  -i, --ip                  IP address to server on; default 0.0.0.0\n")
@@ -291,12 +292,15 @@ which enables basic auth to view the files hosted by http.FileServer. Handy..
 func basicAuth(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if VERBOSE {
-			log.Printf("CLIENT: %s URI: %s\n", r.RemoteAddr, r.RequestURI)
+			log.Printf("CLIENT: %s PATH: %s\n", r.RemoteAddr, r.RequestURI)
 		}
 
 		if AUTH {
 			user, pass, ok := r.BasicAuth()
 			if !ok || (user != USER || !checkPass(pass, PASS)) {
+				if VERBOSE {
+					log.Printf("CLIENT: %s PATH: %s INCORRECT USERNAME/PASS\n", r.RemoteAddr, r.RequestURI)
+				}
 				w.Header().Set("WWW-Authenticate", `Basic realm="api"`)
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				return
@@ -400,12 +404,16 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 	</html>`
 
 	if VERBOSE {
-		log.Printf("CLIENT: %s URI: %s\n", r.RemoteAddr, r.RequestURI)
+		log.Printf("CLIENT: %s PATH: %s\n", r.RemoteAddr, r.RequestURI)
 	}
 
 	if AUTH {
 		user, pass, ok := r.BasicAuth()
 		if !ok || (user != USER || !checkPass(pass, PASS)) {
+			if VERBOSE {
+				log.Printf("CLIENT: %s PATH: %s INCORRECT USERNAME/PASS\n", r.RemoteAddr, r.RequestURI)
+			}
+
 			w.Header().Set("WWW-Authenticate", `Basic realm="api"`)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
@@ -500,7 +508,7 @@ func uploadFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if VERBOSE {
-		log.Printf("CLIENT: %s file upload: %s\n", r.RemoteAddr, fileHeader.Filename)
+		log.Printf("CLIENT: %s UPLOAD: %s\n", r.RemoteAddr, fileHeader.Filename)
 	}
 
 	// reload the current page on successful upload
@@ -540,7 +548,7 @@ func deleteFile(w http.ResponseWriter, r *http.Request) {
 	os.Remove(path)
 
 	if VERBOSE {
-		log.Printf("CLIENT: %s deleted file: %s\n", r.RemoteAddr, path)
+		log.Printf("CLIENT: %s DELETED: %s\n", r.RemoteAddr, path)
 	}
 
 	// reload the current page
@@ -572,7 +580,7 @@ func genKeys(host string) {
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
-			Organization: []string{"Go File Server"},
+			Organization: []string{"Mini File Server"},
 		},
 		NotBefore: notBefore,
 		NotAfter:  notAfter,

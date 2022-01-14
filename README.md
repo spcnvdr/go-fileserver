@@ -9,7 +9,7 @@ This program creates a web interface that allows users to download, upload, or
 delete files from the serving computer. Basic authentication and TLS is 
 supported and can be enabled on the command line. 
 
-The goal of this program is to be as portable and to use as few
+The goal of this program is to be portable and to use as few
 external dependencies as possible. I wanted to use only the standard library
 for this program. I also understand that this program could be cleaner if
 broken up into multiple files, but I wanted it to keep it in a single source
@@ -23,7 +23,9 @@ While this server supports TLS and basic authentication, it may not be perfect.
 I would recommend only using it on a secure or trusted network. Pick a good 
 password when using basic authentication. Basic authentication is useless 
 without TLS enabled too! If possible, use your own TLS certs instead of 
-auto-generating self-signed certificates.
+auto-generating self-signed certificates. Auto-generated/self-signed 
+certificates created using the "-t/--tls" flag are good for 2 weeks from the 
+day of creation.
 
 **NOTE**
 
@@ -37,17 +39,19 @@ client received a self-signed certificate when visiting the web page.
 
 **Defaults**
 
-Default settings are to serve on all IPv4 addresses (0.0.0.0) on port 8080.
-Can be changed with command line arguments
+Default settings are to serve on the first available IPv4 address (0.0.0.0) on 
+port 8080 using HTTP. This can be changed with command line arguments.
 
 
 **Usage**
 
-Install Go and download this repository
+Install Go and clone this repository
 
-Unzip the files and change into the cmd directory
+    git clone https://github.com/spcnvdr/go-fileserver.git
 
-    cd ./cmd
+Change into the cmd directory inside the project
+
+    cd ./go-fileserver/cmd
 
 Build the program
 
@@ -57,7 +61,7 @@ Run the program with --help to see available options
 
     ./main --help
 
-Serve up a directory of files
+Serve a directory of files
 
     ./main /home/user/files
 
