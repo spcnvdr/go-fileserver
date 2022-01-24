@@ -32,7 +32,7 @@ import (
 	"time"
 )
 
-const Version = "mini server 0.0.5"
+const Version = "mini server 0.0.6"
 
 /*
 File: a small struct to hold information about a file that can be easily
@@ -84,31 +84,31 @@ func init() {
 
 	// version
 	flag.BoolVar(&VERSION, "version", false, "Print program version")
-	flag.BoolVar(&VERSION, "V", false, "Print program version")
+	flag.BoolVar(&VERSION, "V", false, "Version shortcut")
 
 	// port
 	flag.StringVar(&PORT, "port", "8080", "Port to listen on, defaults to 8080")
-	flag.StringVar(&PORT, "p", "8080", "Leave the original file unchanged")
+	flag.StringVar(&PORT, "p", "8080", "Port shortcut")
 
 	// enable TLS
 	flag.BoolVar(&TLS, "tls", false, "Generate and use self-signed TLS cert")
-	flag.BoolVar(&TLS, "t", false, "Generate and use self-signed TLS cert")
+	flag.BoolVar(&TLS, "t", false, "TLS shortcut")
 
 	// Use custom TLS key
 	flag.StringVar(&KEY, "key", "", "Use custom TLS Key, must also provide cert in PEM")
-	flag.StringVar(&KEY, "k", "", "Use custom TLS key, must also provide cert in PEM")
+	flag.StringVar(&KEY, "k", "", "TLS key shortcut")
 
 	// Use custom TLS cert
-	flag.StringVar(&CERT, "cert", "", "Use custom TLS Key, must also provide key")
-	flag.StringVar(&CERT, "c", "", "Use custom TLS key, must also provide key")
+	flag.StringVar(&CERT, "cert", "", "Use custom TLS Cert, must also provide key")
+	flag.StringVar(&CERT, "c", "", "TLS cert shortcut")
 
 	// enable simple authentication
 	flag.StringVar(&USER, "user", "", "Enable authentication with this username")
-	flag.StringVar(&USER, "u", "", "Enable authentication with this username")
+	flag.StringVar(&USER, "u", "", "Basic auth shortcut")
 
 	// enable verbose mode
 	flag.BoolVar(&VERBOSE, "verbose", false, "Enable verbose output")
-	flag.BoolVar(&VERBOSE, "v", false, "Enable verbose output")
+	flag.BoolVar(&VERBOSE, "v", false, "Verbose shortcut")
 }
 
 func main() {
@@ -139,17 +139,19 @@ func main() {
 		log.Fatal("Must provie both a key and certificate in PEM format!")
 	}
 
-	// use provided cert and key
-	if CERT != "" && KEY != "" {
-		cert = CERT
-		key = KEY
-	}
-
 	// if generating our own self-signed TLS cert/key
 	if TLS {
 		genKeys(HOST)
 		cert = "cert.pem"
 		key = "key.pem"
+	}
+
+	// use provided cert and key,
+	// if these options are provided and self-signed option used, prefer
+	// the explicitly given cert and key files
+	if CERT != "" && KEY != "" {
+		cert = CERT
+		key = KEY
 	}
 
 	// User enabled basic auth, get password interactively
@@ -206,7 +208,7 @@ func main() {
 // printUsage - Print a simple usage message.
 func printUsage() {
 	fmt.Fprintf(os.Stderr, "Usage: mini [OPTION...] FOLDER\n")
-	fmt.Fprintf(os.Stderr, `Try 'mini --help' or 'mini -h' for more information\n`)
+	fmt.Fprintf(os.Stderr, `Try 'mini --help' or 'mini -h' for more information`+"\n")
 }
 
 // printHelp - Print a custom detailed help message.
@@ -239,6 +241,25 @@ func checkDir(path string) error {
 	}
 
 	if !info.IsDir() {
+		return fmt.Errorf("Error: not a directory %s", path)
+	}
+
+	return nil
+}
+
+// exists - check if file exists
+func exists(path string) error {
+	fd, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("Error opening file: %s", err)
+	}
+
+	info, err := fd.Stat()
+	if err != nil {
+		return fmt.Errorf("os.Stat() error: %s", err)
+	}
+
+	if !info.Mode().IsRegular() {
 		return fmt.Errorf("Error: not a directory %s", path)
 	}
 
@@ -603,6 +624,11 @@ func genKeys(host string) {
 		log.Fatalf("Failed to create certificate: %v", err)
 	}
 
+	// Don't overwrite existing certs
+	if err = exists("cert.pem"); err == nil {
+		log.Fatal("Failed to write cert.pem: file already exists!")
+	}
+
 	// Write cert to cert.pem
 	certOut, err := os.Create("cert.pem")
 	if err != nil {
@@ -613,6 +639,11 @@ func genKeys(host string) {
 	}
 	if err := certOut.Close(); err != nil {
 		log.Fatalf("Error closing cert.pem: %v", err)
+	}
+
+	// Don't overwrite existing certs
+	if err = exists("key.pem"); err == nil {
+		log.Fatal("Failed to write key.pem: file already exists!")
 	}
 
 	// Write key to key.pem
