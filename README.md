@@ -86,6 +86,14 @@ in the browser:
 
 ![Go File Server Client Side](./img/screenshot2.png)
 
+
+**To Do**
+
+- [ ] Clean up the code
+- [ ] Refactor code to serve files directly with http.ServeFile
+- [ ] Use a login page instead of Basic Auth?
+
+
 **Contributing**
 
 Pull requests, new feature suggestions, and bug reports/issues are

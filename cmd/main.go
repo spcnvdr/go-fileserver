@@ -23,16 +23,18 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"math"
 	"math/big"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
 
-const Version = "mini server 0.0.6"
+const Version = "mini server 0.0.7"
 
 /*
 File: a small struct to hold information about a file that can be easily
@@ -216,8 +218,8 @@ func printHelp() {
 
 	fmt.Fprintf(os.Stderr, "Usage: mini [OPTION...] FOLDER\n")
 	fmt.Fprintf(os.Stderr, "Serve the given folder via an HTTP server\n\n")
-	fmt.Fprintf(os.Stderr, "  -c, --cert                Use the proided PEM cert for TLS, MUST also use -k\n")
-	fmt.Fprintf(os.Stderr, "  -i, --ip                  IP address to server on; default 0.0.0.0\n")
+	fmt.Fprintf(os.Stderr, "  -c, --cert                Use the provided PEM cert for TLS, MUST also use -k\n")
+	fmt.Fprintf(os.Stderr, "  -i, --ip                  IP address to serve on; default 0.0.0.0\n")
 	fmt.Fprintf(os.Stderr, "  -k, --key                 Use provided PEM key for TLS, MUST also use -c\n")
 	fmt.Fprintf(os.Stderr, "  -p, --port                Port to serve on: default 8080\n")
 	fmt.Fprintf(os.Stderr, "  -t, --tls                 Generate and use self-signed TLS cert.\n")
@@ -267,18 +269,16 @@ func exists(path string) error {
 }
 
 // sizeToStr converts a file size in bytes to a human friendy string.
-func sizeToStr(b int64) string {
-	const unit = 1000
-	if b < unit {
-		return fmt.Sprintf("%dB", b)
+func sizeToStr(n int64) string {
+	if n == 0 {
+		return "0B"
 	}
-	div, exp := int64(unit), 0
-	for n := b / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f%c",
-		float64(b)/float64(div), "KMGTPE"[exp])
+
+	b := float64(n)
+	units := []string{"B", "K", "M", "G", "T", "P", "E"}
+
+	i := math.Floor(math.Log(b) / math.Log(1000))
+	return strconv.FormatFloat((b/math.Pow(1024, i))*1, 'f', 1, 64) + units[int(i)]
 }
 
 /*
@@ -362,7 +362,7 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 				<fieldset>
 					<legend>Upload a new file</legend>
 					<input type="hidden" id="directory" type="text" name="directory" value="{{ .Directory }}">
-					<input type="file" placeholder="Filename" name="file-upload">
+					<input type="file" placeholder="Filename" name="file-upload" required>
 					<button type="submit">Upload</button>
 				</fieldset>
 			</form>
@@ -672,14 +672,12 @@ but IDK if it really matters.
 */
 func getPass() string {
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Print("Enter password: ")
-	p1, _ := reader.ReadString('\n')
-	fmt.Print("Enter password again: ")
-	p2, _ := reader.ReadString('\n')
+	p1, p2 := "1", "2"
 
-	for p1 != p2 {
-		fmt.Printf("\nInput passwords did not match! Try again...\n")
-		fmt.Print("Enter password: ")
+	// emulate a do-while to get and check that passwords entered match
+	for bad := true; bad; bad = (p1 != p2) {
+		//fmt.Printf("\nInput passwords did not match! Try again...\n")
+		fmt.Print("\nEnter password: ")
 		p1, _ = reader.ReadString('\n')
 		fmt.Print("Enter password again: ")
 		p2, _ = reader.ReadString('\n')
