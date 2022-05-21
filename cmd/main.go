@@ -278,7 +278,7 @@ func sizeToStr(n int64) string {
 	units := []string{"B", "K", "M", "G", "T", "P", "E"}
 
 	i := math.Floor(math.Log(b) / math.Log(1000))
-	return strconv.FormatFloat((b/math.Pow(1024, i))*1, 'f', 1, 64) + units[int(i)]
+	return strconv.FormatFloat((b/math.Pow(1000, i))*1, 'f', 1, 64) + units[int(i)]
 }
 
 /*
@@ -305,6 +305,17 @@ func fileFunc(path string) (Files, error) {
 	return fs, nil
 }
 
+// authFail sends a 401 unauthorized status code when a user fails to
+// authenticate
+func authFail(w http.ResponseWriter, r *http.Request) {
+	if VERBOSE {
+		log.Printf("CLIENT: %s PATH: %s INCORRECT USERNAME/PASS\n",
+			r.RemoteAddr, r.RequestURI)
+	}
+	w.Header().Set("WWW-Authenticate", `Basic realm="api"`)
+	http.Error(w, "Unauthorized", http.StatusUnauthorized)
+}
+
 /*
 basicAuth require authentication, if enabled on cmd line, to directly view
 static files. This is basically a wrapper around Go's built in http.FileServer
@@ -319,11 +330,7 @@ func basicAuth(h http.Handler) http.Handler {
 		if AUTH {
 			user, pass, ok := r.BasicAuth()
 			if !ok || (user != USER || !checkPass(pass, PASS)) {
-				if VERBOSE {
-					log.Printf("CLIENT: %s PATH: %s INCORRECT USERNAME/PASS\n", r.RemoteAddr, r.RequestURI)
-				}
-				w.Header().Set("WWW-Authenticate", `Basic realm="api"`)
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				authFail(w, r)
 				return
 			}
 		}
@@ -431,12 +438,7 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 	if AUTH {
 		user, pass, ok := r.BasicAuth()
 		if !ok || (user != USER || !checkPass(pass, PASS)) {
-			if VERBOSE {
-				log.Printf("CLIENT: %s PATH: %s INCORRECT USERNAME/PASS\n", r.RemoteAddr, r.RequestURI)
-			}
-
-			w.Header().Set("WWW-Authenticate", `Basic realm="api"`)
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			authFail(w, r)
 			return
 		}
 	}

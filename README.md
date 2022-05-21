@@ -69,7 +69,7 @@ Generate self-signed TLS certs and serve directory
 
     ./main -t /home/user/files
 
-Set up basic auth with already generated TLS certs. Basic auth will 
+Set up basic auth with existing TLS certs. Basic auth will 
 interactively prompt for a password to avoid storing a password 
 in .bash_history or other command line logs. 
 
