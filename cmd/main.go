@@ -34,7 +34,7 @@ import (
 	"time"
 )
 
-const Version = "mini server 0.0.7"
+const Version = "mini server 0.0.8"
 
 /*
 File: a small struct to hold information about a file that can be easily
