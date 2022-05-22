@@ -21,10 +21,12 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"io/fs"
 	"io/ioutil"
 	"log"
 	"math"
 	"math/big"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"os"
@@ -34,7 +36,7 @@ import (
 	"time"
 )
 
-const Version = "mini server 0.0.8"
+const Version = "mini server 0.0.9"
 
 /*
 File: a small struct to hold information about a file that can be easily
@@ -120,14 +122,12 @@ func main() {
 	flag.Parse()
 
 	if VERSION {
-		fmt.Println(Version)
-		os.Exit(0)
+		log.Fatalln(Version)
 	}
 
 	// Require folder argument to run
 	if len(flag.Args()) == 0 {
 		printUsage()
-		os.Exit(1)
 	}
 
 	FILE_PATH = flag.Arg(0)
@@ -138,7 +138,7 @@ func main() {
 	}
 
 	if (CERT != "" && KEY == "") || (CERT == "" && KEY != "") {
-		log.Fatal("Must provie both a key and certificate in PEM format!")
+		log.Fatal("Error: must provie both a key and certificate in PEM format!")
 	}
 
 	// if generating our own self-signed TLS cert/key
@@ -149,8 +149,6 @@ func main() {
 	}
 
 	// use provided cert and key,
-	// if these options are provided and self-signed option used, prefer
-	// the explicitly given cert and key files
 	if CERT != "" && KEY != "" {
 		cert = CERT
 		key = KEY
@@ -195,22 +193,23 @@ func main() {
 		}
 
 		fmt.Println(`If using a self-signed certificate, ignore "unknown certificate" warnings`)
-		fmt.Printf("\nServing on: https://%s\n", serving)
+		fmt.Printf("\nServing on: https://%s\n", formatURL(true, HOST, PORT))
 		err := s.ListenAndServeTLS(cert, key)
 		log.Fatal(err)
 
 	} else {
-		fmt.Printf("\nServing on: http://%s\n", serving)
+		fmt.Printf("\nServing on: http://%s\n", formatURL(false, HOST, PORT))
 		err := http.ListenAndServe(serving, nil)
 		log.Fatal(err)
 	}
 
 }
 
-// printUsage - Print a simple usage message.
+// printUsage - Print a simple usage message and exit.
 func printUsage() {
 	fmt.Fprintf(os.Stderr, "Usage: mini [OPTION...] FOLDER\n")
 	fmt.Fprintf(os.Stderr, `Try 'mini --help' or 'mini -h' for more information`+"\n")
+	os.Exit(1)
 }
 
 // printHelp - Print a custom detailed help message.
@@ -230,18 +229,54 @@ func printHelp() {
 	fmt.Fprintf(os.Stderr, "\n")
 }
 
+/*
+formatURL formats the URL before printing where the server is hosted
+Don't show the port number if serving on the default port for the given
+protocol, e.g. https://hostname.com instead of https://hostname.com:443
+*/
+func formatURL(tls bool, host, port string) string {
+	if tls && port == "443" {
+		return host
+	} else if !tls && port == "80" {
+		return host
+	} else {
+		return fmt.Sprintf("%s:%s", host, port)
+	}
+}
+
+/* File Functions */
+
+/*
+createFile helper function to create a new file and return the file descriptor
+*/
+func createFile(name string) *os.File {
+	f, err := os.Create(name)
+	if err != nil {
+		log.Fatalf("Failed to created file: %v", err)
+	}
+	return f
+}
+
+// closeFile will close an open file, bails on error
+func closeFile(f *os.File) {
+	err := f.Close()
+	if err != nil {
+		log.Fatalf("Error closing file: %v", err)
+	}
+}
+
+// statFile calls os.Stat on a given path
+func statFile(path string) fs.FileInfo {
+	info, err := os.Stat(path)
+	if err != nil {
+		log.Fatalf("Error os.Stat() %s: %v", path, err)
+	}
+	return info
+}
+
 // checkDir ensures we can access the given path and it is a directory.
 func checkDir(path string) error {
-	fd, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("Error opening folder: %s", err)
-	}
-
-	info, err := fd.Stat()
-	if err != nil {
-		return fmt.Errorf("os.Stat() error: %s", err)
-	}
-
+	info := statFile(path)
 	if !info.IsDir() {
 		return fmt.Errorf("Error: not a directory %s", path)
 	}
@@ -249,23 +284,30 @@ func checkDir(path string) error {
 	return nil
 }
 
-// exists - check if file exists
-func exists(path string) error {
-	fd, err := os.Open(path)
+// exists checks if file/folder exists
+func exists(path string) bool {
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return false
+	}
+	return true
+}
+
+/*
+copyUploadFile copies a multipart form file to the file system
+returns an error so we can return a 500 instead of crashing/exiting
+*/
+func copyUploadFile(path string, src multipart.File) error {
+	dst, err := os.Create(path)
 	if err != nil {
-		return fmt.Errorf("Error opening file: %s", err)
+		return err
 	}
 
-	info, err := fd.Stat()
+	defer dst.Close()
+	_, err = io.Copy(dst, src)
 	if err != nil {
-		return fmt.Errorf("os.Stat() error: %s", err)
+		return err
 	}
-
-	if !info.Mode().IsRegular() {
-		return fmt.Errorf("Error: not a directory %s", path)
-	}
-
-	return nil
+	return err
 }
 
 // sizeToStr converts a file size in bytes to a human friendy string.
@@ -305,8 +347,12 @@ func fileFunc(path string) (Files, error) {
 	return fs, nil
 }
 
-// authFail sends a 401 unauthorized status code when a user fails to
-// authenticate
+/* Server helper functions and handlers */
+
+/*
+authFail sends a 401 unauthorized status code when a user fails to
+authenticate
+*/
 func authFail(w http.ResponseWriter, r *http.Request) {
 	if VERBOSE {
 		log.Printf("CLIENT: %s PATH: %s INCORRECT USERNAME/PASS\n",
@@ -314,6 +360,11 @@ func authFail(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("WWW-Authenticate", `Basic realm="api"`)
 	http.Error(w, "Unauthorized", http.StatusUnauthorized)
+}
+
+// redirectRoot redirects server root to /view?dir=/.
+func redirectRoot(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/view?dir=/", 302)
 }
 
 /*
@@ -336,11 +387,6 @@ func basicAuth(h http.Handler) http.Handler {
 		}
 		h.ServeHTTP(w, r)
 	})
-}
-
-// redirectRoot redirects server root to /view?dir=/.
-func redirectRoot(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/view?dir=/", 302)
 }
 
 /*
@@ -512,22 +558,8 @@ func uploadFile(w http.ResponseWriter, r *http.Request) {
 	// close uploaded file descriptor when done
 	defer file.Close()
 
-	// Create a new file in the correct directory
-	dst, err := os.Create(path)
-	if err != nil {
+	if err = copyUploadFile(path, file); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// close new file descriptor later
-	defer dst.Close()
-
-	// Copy the uploaded file to the filesystem
-	// at the specified destination
-	_, err = io.Copy(dst, file)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
 
 	if VERBOSE {
@@ -578,6 +610,8 @@ func deleteFile(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "view?dir="+dir, 302)
 }
 
+/* Generate TLS keys and helper functions */
+
 /*
 genKeys - Generate self-signed TLS certificate and key.
 Shamelessly stolen and modified from:
@@ -627,44 +661,60 @@ func genKeys(host string) {
 	}
 
 	// Don't overwrite existing certs
-	if err = exists("cert.pem"); err == nil {
+	if exists("cert.pem") {
 		log.Fatal("Failed to write cert.pem: file already exists!")
 	}
 
-	// Write cert to cert.pem
-	certOut, err := os.Create("cert.pem")
-	if err != nil {
-		log.Fatalf("Failed to open cert.pem for writing: %v", err)
-	}
-	if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes}); err != nil {
-		log.Fatalf("Failed to write data to cert.pem: %v", err)
-	}
-	if err := certOut.Close(); err != nil {
-		log.Fatalf("Error closing cert.pem: %v", err)
+	if err = writeCertFile("cert.pem", derBytes); err != nil {
+		log.Fatalf("Failed to create TLS certificate")
 	}
 
-	// Don't overwrite existing certs
-	if err = exists("key.pem"); err == nil {
+	// Don't overwrite existing key file
+	if exists("key.pem") {
 		log.Fatal("Failed to write key.pem: file already exists!")
 	}
 
-	// Write key to key.pem
-	keyOut, err := os.OpenFile("key.pem", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err = writeKeyFile("key.pem", priv); err != nil {
+		log.Fatalf("Failed to write key file: %v", err)
+	}
+
+}
+
+/*
+writeKeyFile creates and writes an ECDSA private key to a pem file with
+the given name
+*/
+func writeKeyFile(name string, privKey *ecdsa.PrivateKey) error {
+	keyOut := openKeyFile(name)
+	defer closeFile(keyOut)
+
+	privBytes, err := x509.MarshalPKCS8PrivateKey(privKey)
+	if err != nil {
+		return err
+	}
+	err = pem.Encode(keyOut, &pem.Block{Type: "PRIVATE KEY", Bytes: privBytes})
+	return err
+}
+
+// openKeyFile creates and opens a file to write ecdsa key to
+func openKeyFile(name string) *os.File {
+	keyOut, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		log.Fatalf("Failed to open key.pem for writing: %v", err)
-		return
 	}
-	privBytes, err := x509.MarshalPKCS8PrivateKey(priv)
-	if err != nil {
-		log.Fatalf("Unable to marshal private key: %v", err)
-	}
-	if err := pem.Encode(keyOut, &pem.Block{Type: "PRIVATE KEY", Bytes: privBytes}); err != nil {
-		log.Fatalf("Failed to write data to key.pem: %v", err)
-	}
-	if err := keyOut.Close(); err != nil {
-		log.Fatalf("Error closing key.pem: %v", err)
-	}
+	return keyOut
 }
+
+// Write an X.509 certificate to a file with the given name
+func writeCertFile(name string, data []byte) error {
+	certOut := createFile(name)
+	defer closeFile(certOut)
+
+	err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: data})
+	return err
+}
+
+/* Basic auth helper functions */
 
 /*
 getPass - Get password interactively from stdin,
