@@ -90,7 +90,7 @@ in the browser:
 **To Do**
 
 - [ ] Clean up the code
-- [ ] Refactor code to serve files directly with http.ServeFile
+- [x] Refactor code to serve files directly with http.ServeFile
 - [ ] Use a login page instead of Basic Auth?
 
 
