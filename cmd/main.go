@@ -36,7 +36,7 @@ import (
 	"time"
 )
 
-const Version = "mini server 0.0.9"
+const Version = "mini server 0.1.0"
 
 /*
 File: a small struct to hold information about a file that can be easily
@@ -160,11 +160,9 @@ func main() {
 		PASS = getPass()
 	}
 
-	// serve our static resources without having to individually host each file
-	http.Handle("/files/", http.StripPrefix("/files/", basicAuth(http.FileServer(http.Dir(FILE_PATH)))))
-
 	// setup our routes
 	http.HandleFunc("/", redirectRoot)
+	http.HandleFunc("/get", getFile)
 	http.HandleFunc("/upload", uploadFile)
 	http.HandleFunc("/view", viewDir)
 	http.HandleFunc("/delete", deleteFile)
@@ -319,8 +317,8 @@ func sizeToStr(n int64) string {
 	b := float64(n)
 	units := []string{"B", "K", "M", "G", "T", "P", "E"}
 
-	i := math.Floor(math.Log(b) / math.Log(1000))
-	return strconv.FormatFloat((b/math.Pow(1000, i))*1, 'f', 1, 64) + units[int(i)]
+	i := math.Floor(math.Log(b) / math.Log(1024))
+	return strconv.FormatFloat((b/math.Pow(1024, i))*1, 'f', 1, 64) + units[int(i)]
 }
 
 /*
@@ -350,12 +348,28 @@ func fileFunc(path string) (Files, error) {
 /* Server helper functions and handlers */
 
 /*
+checkAuth is a helper function that check's a user's credential when
+basic auth is enabled. Returns true if user successfully authenticated or
+if basic auth is disabled, return false otherwise.
+*/
+func checkAuth(w http.ResponseWriter, r *http.Request) bool {
+	if AUTH {
+		user, pass, ok := r.BasicAuth()
+		if !ok || (user != USER || !checkPass(pass, PASS)) {
+			return false
+		}
+	}
+	return true
+
+}
+
+/*
 authFail sends a 401 unauthorized status code when a user fails to
 authenticate
 */
 func authFail(w http.ResponseWriter, r *http.Request) {
 	if VERBOSE {
-		log.Printf("CLIENT: %s PATH: %s INCORRECT USERNAME/PASS\n",
+		log.Printf("CLIENT: %s PATH: %s: INCORRECT USERNAME/PASS\n",
 			r.RemoteAddr, r.RequestURI)
 	}
 	w.Header().Set("WWW-Authenticate", `Basic realm="api"`)
@@ -367,26 +381,38 @@ func redirectRoot(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/view?dir=/", 302)
 }
 
-/*
-basicAuth require authentication, if enabled on cmd line, to directly view
-static files. This is basically a wrapper around Go's built in http.FileServer
-which enables basic auth to view the files hosted by http.FileServer. Handy..
-*/
-func basicAuth(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if VERBOSE {
-			log.Printf("CLIENT: %s PATH: %s\n", r.RemoteAddr, r.RequestURI)
-		}
+// getFile serves a single file requested via URL
+func getFile(w http.ResponseWriter, r *http.Request) {
+	// if basic auth, must be logged in to download
+	if !checkAuth(w, r) {
+		authFail(w, r)
+		return
+	}
 
-		if AUTH {
-			user, pass, ok := r.BasicAuth()
-			if !ok || (user != USER || !checkPass(pass, PASS)) {
-				authFail(w, r)
-				return
-			}
-		}
-		h.ServeHTTP(w, r)
-	})
+	keys, ok := r.URL.Query()["file"]
+	if !ok || len(keys[0]) < 1 {
+		log.Println("Url Param 'key' is missing")
+		redirectRoot(w, r)
+	}
+
+	file := keys[0]
+	if strings.Contains(file, "..") {
+		// prevent path traversal
+		http.Redirect(w, r, "/", 302)
+		return
+	}
+
+	path := filepath.Clean(filepath.Join(FILE_PATH, file))
+
+	// Set header so user sees the original filename in the download box
+	filename := filepath.Base(path)
+	w.Header().Set("Content-Disposition", "attachment; filename="+filename)
+
+	if VERBOSE {
+		log.Printf("CLIENT: %s DOWNLOAD: %s\n", r.RemoteAddr, path)
+	}
+
+	http.ServeFile(w, r, path)
 }
 
 /*
@@ -405,6 +431,11 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 			<!-- prevent favicon requests -->
 			<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgo=">
 			<title>{{ .Title }}</title>
+			<style>
+				tbody tr:nth-child(odd) {
+					background-color: #eeeeee;
+			  	}
+			</style>
 		</head>
 		<body>
 		<h2>{{.Title}}</h2>
@@ -450,10 +481,10 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 								{{ end }}
 							{{ else }}
 								{{ if eq $.Directory  "/" }}
-									<a download href="../../files/{{ .Name }}">{{ .Name }}</a>
+									<a download href="/get?file={{ .Name }}">{{ .Name }}</a>
 									
 								{{ else }}
-									<a download href="../../files/{{ $.Directory }}/{{ .Name }}">{{ .Name }}</a>
+									<a download href="/get?file={{ $.Directory }}/{{ .Name }}">{{ .Name }}</a>
 								{{ end }}
 							{{ end }}
 						</td>
@@ -481,12 +512,10 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 		log.Printf("CLIENT: %s PATH: %s\n", r.RemoteAddr, r.RequestURI)
 	}
 
-	if AUTH {
-		user, pass, ok := r.BasicAuth()
-		if !ok || (user != USER || !checkPass(pass, PASS)) {
-			authFail(w, r)
-			return
-		}
+	// check basic auth if enabled
+	if !checkAuth(w, r) {
+		authFail(w, r)
+		return
 	}
 
 	keys, ok := r.URL.Query()["dir"]
@@ -536,6 +565,12 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 
 // uploadFile called when a user chooses a file and clicks the upload button.
 func uploadFile(w http.ResponseWriter, r *http.Request) {
+	// check basic auth if enabled
+	if !checkAuth(w, r) {
+		authFail(w, r)
+		return
+	}
+
 	// Get the file from form
 	file, fileHeader, err := r.FormFile("file-upload")
 	if err != nil {
@@ -576,6 +611,11 @@ It checks that the file exists in the FILE_PATH directory and deletes it
 if it exists.
 */
 func deleteFile(w http.ResponseWriter, r *http.Request) {
+	// check basic auth if enabled
+	if !checkAuth(w, r) {
+		authFail(w, r)
+		return
+	}
 	// Get the name of the file to delete
 	filename := r.FormValue("filename")
 	if filename == "" {
