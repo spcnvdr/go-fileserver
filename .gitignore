@@ -1,4 +1,5 @@
 files/
 files/*
 cmd/main
+cmd/mini
 mini/mini

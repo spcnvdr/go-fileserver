@@ -36,7 +36,7 @@ import (
 	"time"
 )
 
-const Version = "mini server 0.1.0"
+const Version = "mini server 0.1.1"
 
 /*
 File: a small struct to hold information about a file that can be easily
@@ -171,24 +171,7 @@ func main() {
 	serving := HOST + ":" + PORT
 	if CERT != "" || TLS {
 		// Set TLS preferences
-		s := http.Server{
-			Addr: serving,
-			TLSConfig: &tls.Config{
-				MinVersion:               tls.VersionTLS12,
-				CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
-				PreferServerCipherSuites: true,
-				CipherSuites: []uint16{
-					tls.TLS_AES_256_GCM_SHA384,
-					tls.TLS_CHACHA20_POLY1305_SHA256,
-					tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-					tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-					tls.TLS_AES_128_GCM_SHA256,
-					tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-					tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
-					tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
-				},
-			},
-		}
+		s := genServerConfig(serving)
 
 		fmt.Println(`If using a self-signed certificate, ignore "unknown certificate" warnings`)
 		fmt.Printf("\nServing on: https://%s\n", formatURL(true, HOST, PORT))
@@ -205,7 +188,7 @@ func main() {
 
 // printUsage - Print a simple usage message and exit.
 func printUsage() {
-	fmt.Fprintf(os.Stderr, "Usage: mini [OPTION...] FOLDER\n")
+	fmt.Fprintf(os.Stderr, "usage: mini [-tv?V] [-c file] [-i host] [-k file] [-p port] [-u user] folder\n")
 	fmt.Fprintf(os.Stderr, `Try 'mini --help' or 'mini -h' for more information`+"\n")
 	os.Exit(1)
 }
@@ -214,17 +197,39 @@ func printUsage() {
 func printHelp() {
 
 	fmt.Fprintf(os.Stderr, "Usage: mini [OPTION...] FOLDER\n")
-	fmt.Fprintf(os.Stderr, "Serve the given folder via an HTTP server\n\n")
-	fmt.Fprintf(os.Stderr, "  -c, --cert                Use the provided PEM cert for TLS, MUST also use -k\n")
-	fmt.Fprintf(os.Stderr, "  -i, --ip                  IP address to serve on; default 0.0.0.0\n")
-	fmt.Fprintf(os.Stderr, "  -k, --key                 Use provided PEM key for TLS, MUST also use -c\n")
-	fmt.Fprintf(os.Stderr, "  -p, --port                Port to serve on: default 8080\n")
+	fmt.Fprintf(os.Stderr, "Serve the given folder via an HTTP/S server\n\n")
+	fmt.Fprintf(os.Stderr, "  -c, --cert=CERT           Use the provided PEM cert for TLS, MUST also use -k\n")
+	fmt.Fprintf(os.Stderr, "  -i, --ip=HOST             IP address to serve on; default 0.0.0.0\n")
+	fmt.Fprintf(os.Stderr, "  -k, --key=KEY             Use provided PEM key for TLS, MUST also use -c\n")
+	fmt.Fprintf(os.Stderr, "  -p, --port=PORT           Port to serve on: default 8080\n")
 	fmt.Fprintf(os.Stderr, "  -t, --tls                 Generate and use self-signed TLS cert.\n")
-	fmt.Fprintf(os.Stderr, "  -u, --user                Enable basic auth. with this username\n")
+	fmt.Fprintf(os.Stderr, "  -u, --user=USERNAME       Enable basic auth. with this username\n")
 	fmt.Fprintf(os.Stderr, "  -v, --verbose             Enable verbose logging mode\n")
 	fmt.Fprintf(os.Stderr, "  -?, --help                Show this help message\n")
 	fmt.Fprintf(os.Stderr, "  -V, --version             Print program version\n")
 	fmt.Fprintf(os.Stderr, "\n")
+}
+
+// genServerConfig creates an http.Server configuration for the given host
+func genServerConfig(host string) http.Server {
+	return http.Server{
+		Addr: host,
+		TLSConfig: &tls.Config{
+			MinVersion:               tls.VersionTLS12,
+			CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+			PreferServerCipherSuites: true,
+			CipherSuites: []uint16{
+				tls.TLS_AES_256_GCM_SHA384,
+				tls.TLS_CHACHA20_POLY1305_SHA256,
+				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+				tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+			},
+		},
+	}
 }
 
 /*

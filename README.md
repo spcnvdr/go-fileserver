@@ -49,31 +49,37 @@ Install Go and clone this repository
 
     git clone https://github.com/spcnvdr/go-fileserver.git
 
-Change into the cmd directory inside the project
+Change into the directory inside the project
 
-    cd ./go-fileserver/cmd
+    cd ./go-fileserver/
 
-Build the program
+Build the program and change into the cmd directory
 
-    go build main.go
+    make
+    cd cmd
+
+Optionally, change into the directory and build the program manually
+    
+    cd cmd
+    go build ./cmd/main.go -o mini
 
 Run the program with --help to see available options
 
-    ./main --help
+    ./mini --help
 
 Serve a directory of files
 
-    ./main /home/user/files
+    ./mini /home/user/files
 
 Generate self-signed TLS certs and serve directory
 
-    ./main -t /home/user/files
+    ./mini -t /home/user/files
 
 Set up basic auth with existing TLS certs. Basic auth will 
 interactively prompt for a password to avoid storing a password 
 in .bash_history or other command line logs. 
 
-    ./main -c cert.pem -k key.pem -u Bob /home/user/files
+    ./mini -c cert.pem -k key.pem -u Bob /home/user/files
 
 **Screenshots**
 
