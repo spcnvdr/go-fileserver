@@ -36,7 +36,7 @@ import (
 	"time"
 )
 
-const Version = "mini server 0.1.1"
+const Version = "mini server 0.1.2"
 
 /*
 File: a small struct to hold information about a file that can be easily
@@ -163,7 +163,7 @@ func main() {
 	// setup our routes
 	http.HandleFunc("/", redirectRoot)
 	http.HandleFunc("/get", getFile)
-	http.HandleFunc("/upload", uploadFile)
+	http.HandleFunc("/upload", uploadFiles)
 	http.HandleFunc("/view", viewDir)
 	http.HandleFunc("/delete", deleteFile)
 
@@ -449,9 +449,9 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 				action="/upload"
 				method="POST">
 				<fieldset>
-					<legend>Upload a new file</legend>
+					<legend>Upload new file/files</legend>
 					<input type="hidden" id="directory" type="text" name="directory" value="{{ .Directory }}">
-					<input type="file" placeholder="Filename" name="file-upload" required>
+					<input type="file" placeholder="Filename" name="file-upload" required multiple>
 					<button type="submit">Upload</button>
 				</fieldset>
 			</form>
@@ -569,41 +569,48 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 }
 
 // uploadFile called when a user chooses a file and clicks the upload button.
-func uploadFile(w http.ResponseWriter, r *http.Request) {
+func uploadFiles(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	// check basic auth if enabled
 	if !checkAuth(w, r) {
 		authFail(w, r)
 		return
 	}
 
-	// Get the file from form
-	file, fileHeader, err := r.FormFile("file-upload")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
-	/* Get directory value from the form so we know what directory to upload
-	 * the file to */
-	dir := filepath.Clean(r.FormValue("directory"))
+	files := r.MultipartForm.File["file-upload"]
 
+	dir := filepath.Clean(r.FormValue("directory"))
 	if strings.Contains(dir, "..") {
 		// prevent path traversal, redirect to home page
 		http.Redirect(w, r, "/view?dir=/", 302)
 		return
 	}
 
-	path := filepath.Clean(filepath.Join(FILE_PATH, dir, fileHeader.Filename))
+	for i := range files {
+		path := filepath.Clean(filepath.Join(FILE_PATH, dir, files[i].Filename))
 
-	// close uploaded file descriptor when done
-	defer file.Close()
+		file, err := files[i].Open()
+		defer file.Close()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 
-	if err = copyUploadFile(path, file); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
+		if err = copyUploadFile(path, file); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 
-	if VERBOSE {
-		log.Printf("CLIENT: %s UPLOAD: %s\n", r.RemoteAddr, fileHeader.Filename)
+		if VERBOSE {
+			log.Printf("CLIENT: %s UPLOAD: %s\n", r.RemoteAddr, path)
+		}
+
 	}
 
 	// reload the current page on successful upload
@@ -616,6 +623,11 @@ It checks that the file exists in the FILE_PATH directory and deletes it
 if it exists.
 */
 func deleteFile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	// check basic auth if enabled
 	if !checkAuth(w, r) {
 		authFail(w, r)
