@@ -36,7 +36,7 @@ import (
 	"time"
 )
 
-const Version = "mini server 0.1.2"
+const Version = "mini server 0.1.3"
 
 /*
 File: a small struct to hold information about a file that can be easily
@@ -95,7 +95,7 @@ func init() {
 	flag.StringVar(&PORT, "p", "8080", "Port shortcut")
 
 	// enable TLS
-	flag.BoolVar(&TLS, "tls", false, "Generate and use self-signed TLS cert")
+	flag.BoolVar(&TLS, "tls", false, "Generate and use self-signed TLS cert/key")
 	flag.BoolVar(&TLS, "t", false, "TLS shortcut")
 
 	// Use custom TLS key
@@ -137,9 +137,8 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
-	if (CERT != "" && KEY == "") || (CERT == "" && KEY != "") {
-		log.Fatal("Error: must provie both a key and certificate in PEM format!")
-	}
+	// make sure cert and key are given
+	checkPem(CERT, KEY)
 
 	// if generating our own self-signed TLS cert/key
 	if TLS {
@@ -149,29 +148,25 @@ func main() {
 	}
 
 	// use provided cert and key,
-	if CERT != "" && KEY != "" {
+	if len(CERT) > 0 && len(KEY) > 0 {
 		cert = CERT
 		key = KEY
 	}
 
 	// User enabled basic auth, get password interactively
-	if USER != "" {
+	if len(USER) > 0 {
 		AUTH = true
 		PASS = getPass()
 	}
 
 	// setup our routes
-	http.HandleFunc("/", redirectRoot)
-	http.HandleFunc("/get", getFile)
-	http.HandleFunc("/upload", uploadFiles)
-	http.HandleFunc("/view", viewDir)
-	http.HandleFunc("/delete", deleteFile)
+	setupRoutes()
 
 	// start server, bail if error
 	serving := HOST + ":" + PORT
-	if CERT != "" || TLS {
+	if len(CERT) > 0 || TLS {
 		// Set TLS preferences
-		s := genServerConfig(serving)
+		s := setupServerConfig(serving)
 
 		fmt.Println(`If using a self-signed certificate, ignore "unknown certificate" warnings`)
 		fmt.Printf("\nServing on: https://%s\n", formatURL(true, HOST, PORT))
@@ -210,8 +205,29 @@ func printHelp() {
 	fmt.Fprintf(os.Stderr, "\n")
 }
 
-// genServerConfig creates an http.Server configuration for the given host
-func genServerConfig(host string) http.Server {
+/*
+checkPem ensures that either both a certificate an key file are given as
+arugments or neither are given. A user must specify a ceertificate and key
+file on the command line or neither.
+*/
+func checkPem(cert, key string) {
+	if (len(cert) > 0 && len(KEY) == 0) || (len(CERT) == 0 && len(KEY) > 0) {
+		log.Fatal("Error: must provie both a key and certificate in PEM format!")
+	}
+}
+
+// setupRoutes, helper function to configure routes and handlers
+func setupRoutes() {
+	// setup our routes
+	http.HandleFunc("/", redirectRoot)
+	http.HandleFunc("/get", getFile)
+	http.HandleFunc("/upload", uploadFiles)
+	http.HandleFunc("/view", viewDir)
+	http.HandleFunc("/delete", deleteFile)
+}
+
+// setupServerConfig creates an http.Server configuration for the given host
+func setupServerConfig(host string) http.Server {
 	return http.Server{
 		Addr: host,
 		TLSConfig: &tls.Config{
@@ -440,6 +456,11 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 				tbody tr:nth-child(odd) {
 					background-color: #eeeeee;
 			  	}
+				@media (min-width:960px) { 
+					.upload-form {
+						max-width: 40%;
+					}
+				}
 			</style>
 		</head>
 		<body>
@@ -447,7 +468,8 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 		<p>
 			<form enctype="multipart/form-data"
 				action="/upload"
-				method="POST">
+				method="POST"
+				class="upload-form">
 				<fieldset>
 					<legend>Upload new file/files</legend>
 					<input type="hidden" id="directory" type="text" name="directory" value="{{ .Directory }}">
@@ -513,14 +535,14 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 		</body>
 	</html>`
 
-	if VERBOSE {
-		log.Printf("CLIENT: %s PATH: %s\n", r.RemoteAddr, r.RequestURI)
-	}
-
 	// check basic auth if enabled
 	if !checkAuth(w, r) {
 		authFail(w, r)
 		return
+	}
+
+	if VERBOSE {
+		log.Printf("CLIENT: %s PATH: %s\n", r.RemoteAddr, r.RequestURI)
 	}
 
 	keys, ok := r.URL.Query()["dir"]
