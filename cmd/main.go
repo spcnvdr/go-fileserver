@@ -22,7 +22,6 @@ import (
 	"html/template"
 	"io"
 	"io/fs"
-	"io/ioutil"
 	"log"
 	"math"
 	"math/big"
@@ -36,7 +35,7 @@ import (
 	"time"
 )
 
-const Version = "mini server 0.1.3"
+const Version = "mini server 0.1.4"
 
 /*
 File: a small struct to hold information about a file that can be easily
@@ -50,8 +49,11 @@ type File struct {
 	IsDir bool
 }
 
-/* Files is a slice holding information about each file in the destination
-directory */
+/*
+	Files is a slice holding information about each file in the destination
+
+directory
+*/
 type Files []File
 
 /*
@@ -297,7 +299,7 @@ func statFile(path string) fs.FileInfo {
 func checkDir(path string) error {
 	info := statFile(path)
 	if !info.IsDir() {
-		return fmt.Errorf("Error: not a directory %s", path)
+		return fmt.Errorf("error: not a directory %s", path)
 	}
 
 	return nil
@@ -349,18 +351,24 @@ a Files struct with the relevant information about each file.
 func fileFunc(path string) (Files, error) {
 	var fs Files
 
-	files, err := ioutil.ReadDir(path)
+	files, err := os.ReadDir(path)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	for _, file := range files {
 		var f File
-		f.Name = file.Name()
-		f.Size = sizeToStr(file.Size())
-		f.Mode = file.Mode().String()
-		f.Date = file.ModTime().Format(time.UnixDate)
-		f.IsDir = file.IsDir()
+
+		finfo, err := file.Info()
+		if err != nil {
+			continue
+		}
+
+		f.Name = finfo.Name()
+		f.Size = sizeToStr(finfo.Size())
+		f.Mode = finfo.Mode().String()
+		f.Date = finfo.ModTime().Format(time.UnixDate)
+		f.IsDir = finfo.IsDir()
 		fs = append(fs, f)
 	}
 	return fs, nil
@@ -399,7 +407,7 @@ func authFail(w http.ResponseWriter, r *http.Request) {
 
 // redirectRoot redirects server root to /view?dir=/.
 func redirectRoot(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/view?dir=/", 302)
+	http.Redirect(w, r, "/view?dir=/", http.StatusFound)
 }
 
 // getFile serves a single file requested via URL
@@ -419,7 +427,7 @@ func getFile(w http.ResponseWriter, r *http.Request) {
 	file := keys[0]
 	if strings.Contains(file, "..") {
 		// prevent path traversal
-		http.Redirect(w, r, "/", 302)
+		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
 
@@ -549,7 +557,7 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 
 	if !ok || len(keys[0]) < 1 {
 		log.Println("Url Param 'key' is missing")
-		http.Redirect(w, r, "/view?dir=/", 302)
+		http.Redirect(w, r, "/view?dir=/", http.StatusFound)
 		return
 	}
 
@@ -566,7 +574,7 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 
 	if strings.Contains(dir, "..") {
 		// prevent path traversal
-		http.Redirect(w, r, "/view?dir/", 302)
+		http.Redirect(w, r, "/view?dir/", http.StatusFound)
 		return
 	}
 
@@ -612,7 +620,7 @@ func uploadFiles(w http.ResponseWriter, r *http.Request) {
 	dir := filepath.Clean(r.FormValue("directory"))
 	if strings.Contains(dir, "..") {
 		// prevent path traversal, redirect to home page
-		http.Redirect(w, r, "/view?dir=/", 302)
+		http.Redirect(w, r, "/view?dir=/", http.StatusFound)
 		return
 	}
 
@@ -620,10 +628,11 @@ func uploadFiles(w http.ResponseWriter, r *http.Request) {
 		path := filepath.Clean(filepath.Join(FILE_PATH, dir, files[i].Filename))
 
 		file, err := files[i].Open()
-		defer file.Close()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
+
+		defer file.Close()
 
 		if err = copyUploadFile(path, file); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -636,7 +645,7 @@ func uploadFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// reload the current page on successful upload
-	http.Redirect(w, r, "view?dir="+dir, 302)
+	http.Redirect(w, r, "view?dir="+dir, http.StatusFound)
 }
 
 /*
@@ -663,7 +672,7 @@ func deleteFile(w http.ResponseWriter, r *http.Request) {
 
 	if strings.Contains(filename, "..") {
 		// prevent path traversal deletion
-		http.Redirect(w, r, "/", 302)
+		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
 
@@ -686,7 +695,7 @@ func deleteFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// reload the current page
-	http.Redirect(w, r, "view?dir="+dir, 302)
+	http.Redirect(w, r, "view?dir="+dir, http.StatusFound)
 }
 
 /* Generate TLS keys and helper functions */
@@ -825,8 +834,5 @@ func checkPass(input, password string) bool {
 	sha := sha512.New()
 	sha.Write([]byte(input))
 	inpass := base64.StdEncoding.EncodeToString(sha.Sum(nil))
-	if inpass == password {
-		return true
-	}
-	return false
+	return inpass == password
 }

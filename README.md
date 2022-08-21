@@ -81,6 +81,17 @@ in .bash_history or other command line logs.
 
     ./mini -c cert.pem -k key.pem -u Bob /home/user/files
 
+This server can also accept multiple file uploads from the command line 
+using cURL. Add the --insecure option if using a self-signed certificate.
+The directory parameter is used to specify the sub-directory to place the 
+files in. To place the files in the root of the server, use "." as the 
+directory.
+
+    curl -X POST https://IP:PORT/upload -F 'directory=home' -F 'file-upload=@./myfile.txt' -F 'file-upload=@./myfile.pdf' --insecure
+
+    curl -X POST http://IP:PORT/upload -F 'directory=home' -F 'file-upload=@./myfile.txt' -F 'file-upload=@./myfile.pdf'
+
+
 **Screenshots**
 
 Getting started:
@@ -96,8 +107,6 @@ in the browser:
 **To Do**
 
 - [ ] Clean up the code
-- [x] Refactor code to serve files directly with http.ServeFile
-- [ ] Use a login page instead of Basic Auth?
 
 
 **Contributing**
