@@ -213,7 +213,7 @@ arugments or neither are given. A user must specify a ceertificate and key
 file on the command line or neither.
 */
 func checkPem(cert, key string) {
-	if (len(cert) > 0 && len(KEY) == 0) || (len(CERT) == 0 && len(KEY) > 0) {
+	if (len(cert) > 0 && len(key) == 0) || (len(cert) == 0 && len(key) > 0) {
 		log.Fatal("Error: must provie both a key and certificate in PEM format!")
 	}
 }
