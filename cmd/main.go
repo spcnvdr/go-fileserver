@@ -35,7 +35,7 @@ import (
 	"time"
 )
 
-const Version = "mini server 0.1.4"
+const Version = "mini server 0.1.5"
 
 /*
 File: a small struct to hold information about a file that can be easily
@@ -613,6 +613,11 @@ func uploadFiles(w http.ResponseWriter, r *http.Request) {
 
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	// prevents a panic if empty
+	if r.MultipartForm == nil {
+		return
 	}
 
 	files := r.MultipartForm.File["file-upload"]
