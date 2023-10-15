@@ -35,7 +35,7 @@ import (
 	"time"
 )
 
-const Version = "mini server 0.1.5"
+const Version = "mini server 0.1.6"
 
 /*
 File: a small struct to hold information about a file that can be easily
@@ -313,6 +313,12 @@ func exists(path string) bool {
 	return true
 }
 
+func maybeLog(msg string, addr string, path string) {
+	if VERBOSE {
+		log.Printf(msg, addr, path)
+	}
+}
+
 /*
 copyUploadFile copies a multipart form file to the file system
 returns an error so we can return a 500 instead of crashing/exiting
@@ -397,10 +403,7 @@ authFail sends a 401 unauthorized status code when a user fails to
 authenticate
 */
 func authFail(w http.ResponseWriter, r *http.Request) {
-	if VERBOSE {
-		log.Printf("CLIENT: %s PATH: %s: INCORRECT USERNAME/PASS\n",
-			r.RemoteAddr, r.RequestURI)
-	}
+	maybeLog("CLIENT: %s PATH: %s: INCORRECT USERNAME/PASS\n", r.RemoteAddr, r.RequestURI)
 	w.Header().Set("WWW-Authenticate", `Basic realm="api"`)
 	http.Error(w, "Unauthorized", http.StatusUnauthorized)
 }
@@ -427,19 +430,25 @@ func getFile(w http.ResponseWriter, r *http.Request) {
 	file := keys[0]
 	if strings.Contains(file, "..") {
 		// prevent path traversal
-		http.Redirect(w, r, "/", http.StatusFound)
+		redirectRoot(w, r)
 		return
 	}
 
 	path := filepath.Clean(filepath.Join(FILE_PATH, file))
 
+	if !exists(path) || strings.Contains(path, "..") {
+		// file not found
+		maybeLog("CLIENT: %s DOWNLOAD NOT FOUND: %s\n", r.RemoteAddr, path)
+
+		http.Error(w, "File Not Found", http.StatusNotFound)
+		return
+	}
+
 	// Set header so user sees the original filename in the download box
 	filename := filepath.Base(path)
 	w.Header().Set("Content-Disposition", "attachment; filename="+filename)
 
-	if VERBOSE {
-		log.Printf("CLIENT: %s DOWNLOAD: %s\n", r.RemoteAddr, path)
-	}
+	maybeLog("CLIENT: %s DOWNLOAD: %s\n", r.RemoteAddr, path)
 
 	http.ServeFile(w, r, path)
 }
@@ -549,15 +558,13 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if VERBOSE {
-		log.Printf("CLIENT: %s PATH: %s\n", r.RemoteAddr, r.RequestURI)
-	}
+	maybeLog("CLIENT: %s PATH: %s\n", r.RemoteAddr, r.RequestURI)
 
 	keys, ok := r.URL.Query()["dir"]
 
 	if !ok || len(keys[0]) < 1 {
 		log.Println("Url Param 'key' is missing")
-		http.Redirect(w, r, "/view?dir=/", http.StatusFound)
+		redirectRoot(w, r)
 		return
 	}
 
@@ -574,12 +581,18 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 
 	if strings.Contains(dir, "..") {
 		// prevent path traversal
-		http.Redirect(w, r, "/view?dir/", http.StatusFound)
+		redirectRoot(w, r)
 		return
 	}
 
 	// create real path from the server's root folder and navigated folder
 	path := filepath.Clean(filepath.Join(FILE_PATH, dir))
+
+	if !exists(path) {
+		maybeLog("CLIENT: %s BAD PATH: %s\n", r.RemoteAddr, path)
+		http.Error(w, "File Not Found", http.StatusNotFound)
+		return
+	}
 
 	// get list of files in directory
 	f, err := fileFunc(path)
@@ -625,7 +638,7 @@ func uploadFiles(w http.ResponseWriter, r *http.Request) {
 	dir := filepath.Clean(r.FormValue("directory"))
 	if strings.Contains(dir, "..") {
 		// prevent path traversal, redirect to home page
-		http.Redirect(w, r, "/view?dir=/", http.StatusFound)
+		redirectRoot(w, r)
 		return
 	}
 
@@ -643,9 +656,7 @@ func uploadFiles(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 
-		if VERBOSE {
-			log.Printf("CLIENT: %s UPLOAD: %s\n", r.RemoteAddr, path)
-		}
+		maybeLog("CLIENT: %s UPLOAD: %s\n", r.RemoteAddr, path)
 
 	}
 
@@ -677,7 +688,7 @@ func deleteFile(w http.ResponseWriter, r *http.Request) {
 
 	if strings.Contains(filename, "..") {
 		// prevent path traversal deletion
-		http.Redirect(w, r, "/", http.StatusFound)
+		redirectRoot(w, r)
 		return
 	}
 
@@ -689,15 +700,14 @@ func deleteFile(w http.ResponseWriter, r *http.Request) {
 
 	// Make sure file exists
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		maybeLog("CLIENT: %s DELETE NOT FOUND: %s\n", r.RemoteAddr, path)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
 	// ignore errors
 	os.Remove(path)
 
-	if VERBOSE {
-		log.Printf("CLIENT: %s DELETED: %s\n", r.RemoteAddr, path)
-	}
+	maybeLog("CLIENT: %s DELETED: %s\n", r.RemoteAddr, path)
 
 	// reload the current page
 	http.Redirect(w, r, "view?dir="+dir, http.StatusFound)
