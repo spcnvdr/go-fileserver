@@ -35,7 +35,7 @@ import (
 	"time"
 )
 
-const Version = "mini server 0.1.6"
+const Version = "mini server 0.1.7"
 
 /*
 File: a small struct to hold information about a file that can be easily
@@ -540,7 +540,7 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 								<div>
 									<input type="hidden" id="directory" type="text" name="directory" value="{{ $.Directory }}">
 									<input type="hidden" id="file" type="file" name="filename" value="{{ .Name }}">
-									<input type="submit" value="Delete">
+									<input type="submit" onclick="return confirm('Are you sure you want to delete {{ .Name }}?')" value="Delete">
 								</div>
 							</form>
 					  </td>
