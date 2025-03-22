@@ -434,7 +434,7 @@ func checkForPathTraversal(path string, client_addr string) bool {
 
 // redirectRoot redirects server root to /view?dir=/.
 func redirectRoot(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/view?dir=/", http.StatusFound)
+	http.Redirect(w, r, "/view?dir=./", http.StatusFound)
 }
 
 // getFile serves a single file requested via URL
@@ -600,7 +600,7 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 	// What is the parent for current folder?
 	parent := filepath.Dir(dir)
 	if parent == "." {
-		parent = "/"
+		parent = "./"
 	}
 
 	if checkForPathTraversal(dir, r.RemoteAddr) {
