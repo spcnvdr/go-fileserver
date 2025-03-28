@@ -389,6 +389,7 @@ func checkAuth(w http.ResponseWriter, r *http.Request) bool {
 	if AUTH {
 		user, pass, ok := r.BasicAuth()
 		if !ok || (user != USER || !checkPass(pass, PASS)) {
+			time.Sleep(1 * time.Second) // slow down brute force attacks
 			return false
 		}
 	}
