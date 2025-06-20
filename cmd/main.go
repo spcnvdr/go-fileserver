@@ -76,6 +76,7 @@ var (
 	PORT      string
 	TLS       bool
 	USER      string
+	READONLY  bool
 	VERBOSE   bool
 	VERSION   bool
 	FILE_PATH string // folder to serve files from
@@ -111,6 +112,10 @@ func init() {
 	// enable simple authentication
 	flag.StringVar(&USER, "user", "", "Enable authentication with this username")
 	flag.StringVar(&USER, "u", "", "Basic auth shortcut")
+	
+	// enable read only mode
+	flag.BoolVar(&READONLY, "readonly", false, "Disallow delete and upload")
+	flag.BoolVar(&READONLY, "r", false, "Readonly mode shortcut")
 
 	// enable verbose mode
 	flag.BoolVar(&VERBOSE, "verbose", false, "Enable verbose output")
@@ -201,6 +206,7 @@ func printHelp() {
 	fmt.Fprintf(os.Stderr, "  -p, --port=PORT           Port to serve on: default 8080\n")
 	fmt.Fprintf(os.Stderr, "  -t, --tls                 Generate and use self-signed TLS cert.\n")
 	fmt.Fprintf(os.Stderr, "  -u, --user=USERNAME       Enable basic auth. with this username\n")
+	fmt.Fprintf(os.Stderr, "  -r, --readonly            Enable readonly mode\n")
 	fmt.Fprintf(os.Stderr, "  -v, --verbose             Enable verbose logging mode\n")
 	fmt.Fprintf(os.Stderr, "  -?, --help                Show this help message\n")
 	fmt.Fprintf(os.Stderr, "  -V, --version             Print program version\n")
@@ -613,6 +619,11 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 
 // uploadFile called when a user chooses a file and clicks the upload button.
 func uploadFiles(w http.ResponseWriter, r *http.Request) {
+	if READONLY {
+		http.Error(w, "Server is in readonly mode.", http.StatusForbidden)
+		return
+	}
+	
 	if r.Method != "POST" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -670,6 +681,11 @@ It checks that the file exists in the FILE_PATH directory and deletes it
 if it exists.
 */
 func deleteFile(w http.ResponseWriter, r *http.Request) {
+	if READONLY {
+		http.Error(w, "Server is in readonly mode.", http.StatusForbidden)
+		return
+	}
+	
 	if r.Method != "POST" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
