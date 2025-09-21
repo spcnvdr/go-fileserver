@@ -35,7 +35,7 @@ import (
 	"time"
 )
 
-const Version = "mini server 0.1.8"
+const Version = "mini server 0.1.9"
 
 /*
 File: a small struct to hold information about a file that can be easily
@@ -444,7 +444,7 @@ func checkForPathTraversal(path string, client_addr string) bool {
 
 // redirectRoot redirects server root to /view?dir=/.
 func redirectRoot(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/view?dir=/", http.StatusTemporaryRedirect)
+	http.Redirect(w, r, "/view?dir=/", http.StatusFound)
 }
 
 // getFile serves a single file requested via URL
