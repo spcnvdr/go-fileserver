@@ -35,7 +35,7 @@ import (
 	"time"
 )
 
-const Version = "mini server 0.1.7"
+const Version = "mini server 0.1.8"
 
 /*
 File: a small struct to hold information about a file that can be easily
@@ -112,7 +112,7 @@ func init() {
 	// enable simple authentication
 	flag.StringVar(&USER, "user", "", "Enable authentication with this username")
 	flag.StringVar(&USER, "u", "", "Basic auth shortcut")
-	
+
 	// enable read only mode
 	flag.BoolVar(&READONLY, "readonly", false, "Disallow delete and upload")
 	flag.BoolVar(&READONLY, "r", false, "Readonly mode shortcut")
@@ -415,8 +415,11 @@ func authFail(w http.ResponseWriter, r *http.Request) {
 }
 
 /*
-checkForPathTraversal checks if a path traversal is attempted and returns true if there is an attempt to leave the directory that was given on the command line.
-client_addr is only wanted for the error logging vie maybeLog() and is irrelevant for the checking itself. You could just give "unknown" or some other default value.
+checkForPathTraversal checks if a path traversal is attempted
+returns true if there is an attempt to leave the directory
+client_addr is only wanted for the error logging vie maybeLog()
+and is irrelevant for the checking itself.
+You could just give "unknown" or some other default value.
 */
 func checkForPathTraversal(path string, client_addr string) bool {
 	abs_path, err := filepath.Abs(path)
@@ -434,13 +437,14 @@ func checkForPathTraversal(path string, client_addr string) bool {
 	if strings.HasPrefix(abs_path, abs_FILE_PATH) {
 		return false
 	} else {
+		maybeLog("CLIENT: %s PATH TARVERSAL FAIL: %s\n", client_addr, abs_path)
 		return true
 	}
 }
 
 // redirectRoot redirects server root to /view?dir=/.
 func redirectRoot(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/view?dir=/", http.StatusFound)
+	http.Redirect(w, r, "/view?dir=/", http.StatusTemporaryRedirect)
 }
 
 // getFile serves a single file requested via URL
@@ -645,10 +649,11 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 // uploadFile called when a user chooses a file and clicks the upload button.
 func uploadFiles(w http.ResponseWriter, r *http.Request) {
 	if READONLY {
+		maybeLog("CLIENT: %s PATH: %s: READ ONLY MODE: uploaded attempt\n", r.RemoteAddr, r.RequestURI)
 		http.Error(w, "Server is in readonly mode.", http.StatusForbidden)
 		return
 	}
-	
+
 	if r.Method != "POST" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -685,12 +690,14 @@ func uploadFiles(w http.ResponseWriter, r *http.Request) {
 		file, err := files[i].Open()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
 		defer file.Close()
 
 		if err = copyUploadFile(path, file); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
 		maybeLog("CLIENT: %s UPLOAD: %s\n", r.RemoteAddr, path)
@@ -708,10 +715,11 @@ if it exists.
 */
 func deleteFile(w http.ResponseWriter, r *http.Request) {
 	if READONLY {
+		maybeLog("CLIENT: %s PATH: %s: READ ONLY MODE: uploaded attempt\n", r.RemoteAddr, r.RequestURI)
 		http.Error(w, "Server is in readonly mode.", http.StatusForbidden)
 		return
 	}
-	
+
 	if r.Method != "POST" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -726,6 +734,7 @@ func deleteFile(w http.ResponseWriter, r *http.Request) {
 	filename := r.FormValue("filename")
 	if filename == "" {
 		http.Error(w, "missing form value", http.StatusInternalServerError)
+		return
 	}
 
 	// Get the directory to delete file from
@@ -744,6 +753,7 @@ func deleteFile(w http.ResponseWriter, r *http.Request) {
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		maybeLog("CLIENT: %s DELETE NOT FOUND: %s\n", r.RemoteAddr, path)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	// ignore errors
