@@ -408,6 +408,30 @@ func authFail(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "Unauthorized", http.StatusUnauthorized)
 }
 
+/*
+checkForPathTraversal checks if a path traversal is attempted and returns true if there is an attempt to leave the directory that was given on the command line.
+client_addr is only wanted for the error logging vie maybeLog() and is irrelevant for the checking itself. You could just give "unknown" or some other default value.
+*/
+func checkForPathTraversal(path string, client_addr string) bool {
+	abs_path, err := filepath.Abs(path)
+	if err != nil {
+		maybeLog("CLIENT: %s PATH: %s An error has occured while converting path to an absolute path", client_addr, path)
+		return true
+	}
+
+	abs_FILE_PATH, err := filepath.Abs(FILE_PATH)
+	if err != nil {
+		maybeLog("CLIENT: %s PATH: %s An error has occured while converting path to an absolute path", client_addr, path)
+		return true
+	}
+
+	if strings.HasPrefix(abs_path, abs_FILE_PATH) {
+		return false
+	} else {
+		return true
+	}
+}
+
 // redirectRoot redirects server root to /view?dir=/.
 func redirectRoot(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/view?dir=/", http.StatusFound)
@@ -428,15 +452,16 @@ func getFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	file := keys[0]
-	if strings.Contains(file, "..") {
+
+	path := filepath.Clean(filepath.Join(FILE_PATH, file))
+
+	if checkForPathTraversal(path, r.RemoteAddr) {
 		// prevent path traversal
 		redirectRoot(w, r)
 		return
 	}
 
-	path := filepath.Clean(filepath.Join(FILE_PATH, file))
-
-	if !exists(path) || strings.Contains(path, "..") {
+	if !exists(path) {
 		// file not found
 		maybeLog("CLIENT: %s DOWNLOAD NOT FOUND: %s\n", r.RemoteAddr, path)
 
@@ -579,14 +604,14 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 		parent = "/"
 	}
 
-	if strings.Contains(dir, "..") {
+	// create real path from the server's root folder and navigated folder
+	path := filepath.Clean(filepath.Join(FILE_PATH, dir))
+
+	if checkForPathTraversal(path, r.RemoteAddr) {
 		// prevent path traversal
 		redirectRoot(w, r)
 		return
 	}
-
-	// create real path from the server's root folder and navigated folder
-	path := filepath.Clean(filepath.Join(FILE_PATH, dir))
 
 	if !exists(path) {
 		maybeLog("CLIENT: %s BAD PATH: %s\n", r.RemoteAddr, path)
@@ -636,14 +661,15 @@ func uploadFiles(w http.ResponseWriter, r *http.Request) {
 	files := r.MultipartForm.File["file-upload"]
 
 	dir := filepath.Clean(r.FormValue("directory"))
-	if strings.Contains(dir, "..") {
-		// prevent path traversal, redirect to home page
-		redirectRoot(w, r)
-		return
-	}
 
 	for i := range files {
 		path := filepath.Clean(filepath.Join(FILE_PATH, dir, files[i].Filename))
+
+		if checkForPathTraversal(path, r.RemoteAddr) {
+			// prevent path traversal, redirect to home page
+			redirectRoot(w, r)
+			return
+		}
 
 		file, err := files[i].Open()
 		if err != nil {
@@ -686,17 +712,17 @@ func deleteFile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing form value", http.StatusInternalServerError)
 	}
 
-	if strings.Contains(filename, "..") {
-		// prevent path traversal deletion
-		redirectRoot(w, r)
-		return
-	}
-
 	// Get the directory to delete file from
 	dir := r.FormValue("directory")
 
 	// build path to the file
 	path := filepath.Clean(filepath.Join(FILE_PATH, dir, filename))
+
+	if checkForPathTraversal(path, r.RemoteAddr) {
+		// prevent path traversal deletion
+		redirectRoot(w, r)
+		return
+	}
 
 	// Make sure file exists
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
