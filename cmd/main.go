@@ -33,7 +33,7 @@ import (
 	"time"
 )
 
-const Version = "mini server 0.1.7"
+const Version = "mini server 0.1.9"
 
 /*
 File: a small struct to hold information about a file that can be easily
@@ -74,6 +74,7 @@ var (
 	PORT      string
 	TLS       bool
 	USER      string
+	READONLY  bool
 	VERBOSE   bool
 	VERSION   bool
 	FILE_PATH string // folder to serve files from
@@ -109,6 +110,10 @@ func init() {
 	// enable simple authentication
 	flag.StringVar(&USER, "user", "", "Enable authentication with this username")
 	flag.StringVar(&USER, "u", "", "Basic auth shortcut")
+
+	// enable read only mode
+	flag.BoolVar(&READONLY, "readonly", false, "Disallow delete and upload")
+	flag.BoolVar(&READONLY, "r", false, "Readonly mode shortcut")
 
 	// enable verbose mode
 	flag.BoolVar(&VERBOSE, "verbose", false, "Enable verbose output")
@@ -199,6 +204,7 @@ func printHelp() {
 	fmt.Fprintf(os.Stderr, "  -p, --port=PORT           Port to serve on: default 8080\n")
 	fmt.Fprintf(os.Stderr, "  -t, --tls                 Generate and use self-signed TLS cert.\n")
 	fmt.Fprintf(os.Stderr, "  -u, --user=USERNAME       Enable basic auth. with this username\n")
+	fmt.Fprintf(os.Stderr, "  -r, --readonly            Enable readonly mode\n")
 	fmt.Fprintf(os.Stderr, "  -v, --verbose             Enable verbose logging mode\n")
 	fmt.Fprintf(os.Stderr, "  -?, --help                Show this help message\n")
 	fmt.Fprintf(os.Stderr, "  -V, --version             Print program version\n")
@@ -407,6 +413,34 @@ func authFail(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "Unauthorized", http.StatusUnauthorized)
 }
 
+/*
+checkForPathTraversal checks if a path traversal is attempted
+returns true if there is an attempt to leave the directory
+client_addr is only wanted for the error logging vie maybeLog()
+and is irrelevant for the checking itself.
+You could just give "unknown" or some other default value.
+*/
+func checkForPathTraversal(path string, client_addr string) bool {
+	abs_path, err := filepath.Abs(path)
+	if err != nil {
+		maybeLog("CLIENT: %s PATH: %s An error has occured while converting path to an absolute path", client_addr, path)
+		return true
+	}
+
+	abs_FILE_PATH, err := filepath.Abs(FILE_PATH)
+	if err != nil {
+		maybeLog("CLIENT: %s PATH: %s An error has occured while converting path to an absolute path", client_addr, path)
+		return true
+	}
+
+	if strings.HasPrefix(abs_path, abs_FILE_PATH) {
+		return false
+	} else {
+		maybeLog("CLIENT: %s PATH TARVERSAL FAIL: %s\n", client_addr, abs_path)
+		return true
+	}
+}
+
 // redirectRoot redirects server root to /view?dir=/.
 func redirectRoot(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/view?dir=/", http.StatusFound)
@@ -427,15 +461,16 @@ func getFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	file := keys[0]
-	if strings.Contains(file, "..") {
+
+	path := filepath.Clean(filepath.Join(FILE_PATH, file))
+
+	if checkForPathTraversal(path, r.RemoteAddr) {
 		// prevent path traversal
 		redirectRoot(w, r)
 		return
 	}
 
-	path := filepath.Clean(filepath.Join(FILE_PATH, file))
-
-	if !exists(path) || strings.Contains(path, "..") {
+	if !exists(path) {
 		// file not found
 		maybeLog("CLIENT: %s DOWNLOAD NOT FOUND: %s\n", r.RemoteAddr, path)
 
@@ -578,14 +613,14 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 		parent = "/"
 	}
 
-	if strings.Contains(dir, "..") {
+	// create real path from the server's root folder and navigated folder
+	path := filepath.Clean(filepath.Join(FILE_PATH, dir))
+
+	if checkForPathTraversal(path, r.RemoteAddr) {
 		// prevent path traversal
 		redirectRoot(w, r)
 		return
 	}
-
-	// create real path from the server's root folder and navigated folder
-	path := filepath.Clean(filepath.Join(FILE_PATH, dir))
 
 	if !exists(path) {
 		maybeLog("CLIENT: %s BAD PATH: %s\n", r.RemoteAddr, path)
@@ -612,6 +647,12 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 
 // uploadFile called when a user chooses a file and clicks the upload button.
 func uploadFiles(w http.ResponseWriter, r *http.Request) {
+	if READONLY {
+		maybeLog("CLIENT: %s PATH: %s: READ ONLY MODE: uploaded attempt\n", r.RemoteAddr, r.RequestURI)
+		http.Error(w, "Server is in readonly mode.", http.StatusForbidden)
+		return
+	}
+
 	if r.Method != "POST" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -635,24 +676,27 @@ func uploadFiles(w http.ResponseWriter, r *http.Request) {
 	files := r.MultipartForm.File["file-upload"]
 
 	dir := filepath.Clean(r.FormValue("directory"))
-	if strings.Contains(dir, "..") {
-		// prevent path traversal, redirect to home page
-		redirectRoot(w, r)
-		return
-	}
 
 	for i := range files {
 		path := filepath.Clean(filepath.Join(FILE_PATH, dir, files[i].Filename))
 
+		if checkForPathTraversal(path, r.RemoteAddr) {
+			// prevent path traversal, redirect to home page
+			redirectRoot(w, r)
+			return
+		}
+
 		file, err := files[i].Open()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
 		defer file.Close()
 
 		if err = copyUploadFile(path, file); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
 		maybeLog("CLIENT: %s UPLOAD: %s\n", r.RemoteAddr, path)
@@ -669,6 +713,12 @@ It checks that the file exists in the FILE_PATH directory and deletes it
 if it exists.
 */
 func deleteFile(w http.ResponseWriter, r *http.Request) {
+	if READONLY {
+		maybeLog("CLIENT: %s PATH: %s: READ ONLY MODE: uploaded attempt\n", r.RemoteAddr, r.RequestURI)
+		http.Error(w, "Server is in readonly mode.", http.StatusForbidden)
+		return
+	}
+
 	if r.Method != "POST" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -683,11 +733,6 @@ func deleteFile(w http.ResponseWriter, r *http.Request) {
 	filename := r.FormValue("filename")
 	if filename == "" {
 		http.Error(w, "missing form value", http.StatusInternalServerError)
-	}
-
-	if strings.Contains(filename, "..") {
-		// prevent path traversal deletion
-		redirectRoot(w, r)
 		return
 	}
 
@@ -697,10 +742,17 @@ func deleteFile(w http.ResponseWriter, r *http.Request) {
 	// build path to the file
 	path := filepath.Clean(filepath.Join(FILE_PATH, dir, filename))
 
+	if checkForPathTraversal(path, r.RemoteAddr) {
+		// prevent path traversal deletion
+		redirectRoot(w, r)
+		return
+	}
+
 	// Make sure file exists
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		maybeLog("CLIENT: %s DELETE NOT FOUND: %s\n", r.RemoteAddr, path)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	// ignore errors
