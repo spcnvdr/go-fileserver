@@ -50,8 +50,7 @@ type File struct {
 }
 
 /*
-	Files is a slice holding information about each file in the destination
-
+Files is a slice holding information about each file in the destination
 directory
 */
 type Files []File
@@ -319,9 +318,9 @@ func exists(path string) bool {
 	return true
 }
 
-func maybeLog(msg string, addr string, path string) {
+func maybeLog(msg string, args ...any) {
 	if VERBOSE {
-		log.Printf(msg, addr, path)
+		log.Printf(msg, args...)
 	}
 }
 
@@ -518,8 +517,11 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 			  	}
 				@media (min-width:960px) { 
 					.upload-form {
-						max-width: 40%;
+						max-width: 30%;
 					}
+				}
+				fieldset {
+					border-radius: 8px;
 				}
 			</style>
 		</head>
