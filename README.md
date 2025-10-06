@@ -59,9 +59,14 @@ Build the program and change into the cmd directory
     cd cmd
 
 Optionally, change into the directory and build the program manually
-    
+
     cd cmd
     go build ./cmd/main.go -o mini
+
+To compile for a different OSi or arch, simply append to the make command
+
+    GOOS=windows make
+    GOARCH=arm64 make
 
 Run the program with --help to see available options
 

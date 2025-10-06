@@ -33,7 +33,7 @@ import (
 	"time"
 )
 
-const Version = "mini server 0.1.9"
+const Version = "mini server 0.2.0"
 
 /*
 File: a small struct to hold information about a file that can be easily
@@ -48,8 +48,7 @@ type File struct {
 }
 
 /*
-	Files is a slice holding information about each file in the destination
-
+Files is a slice holding information about each file in the destination
 directory
 */
 type Files []File
@@ -317,9 +316,9 @@ func exists(path string) bool {
 	return true
 }
 
-func maybeLog(msg string, addr string, path string) {
+func maybeLog(msg string, args ...any) {
 	if VERBOSE {
-		log.Printf(msg, addr, path)
+		log.Printf(msg, args...)
 	}
 }
 
@@ -356,10 +355,12 @@ func sizeToStr(n int64) string {
 
 /*
 fileFunc is called on each file in the target directory and returns
-a Files struct with the relevant information about each file.
+a Files struct with the relevant information about each file, with 
+directories appearing first
 */
 func fileFunc(path string) (Files, error) {
 	var fs Files
+	var dirs Files
 
 	files, err := os.ReadDir(path)
 	if err != nil {
@@ -379,9 +380,15 @@ func fileFunc(path string) (Files, error) {
 		f.Mode = finfo.Mode().String()
 		f.Date = finfo.ModTime().Format(time.UnixDate)
 		f.IsDir = finfo.IsDir()
-		fs = append(fs, f)
+		if (f.IsDir){
+			dirs = append(dirs, f)
+		} else {
+			fs = append(fs, f)
+		}
 	}
-	return fs, nil
+
+	dirs = append(dirs, fs...)
+	return dirs, nil
 }
 
 /* Server helper functions and handlers */
@@ -509,8 +516,11 @@ func viewDir(w http.ResponseWriter, r *http.Request) {
 			  	}
 				@media (min-width:960px) { 
 					.upload-form {
-						max-width: 40%;
+						max-width: 30%;
 					}
+				}
+				fieldset {
+					border-radius: 8px;
 				}
 			</style>
 		</head>
