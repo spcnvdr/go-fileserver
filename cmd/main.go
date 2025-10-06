@@ -10,11 +10,9 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/sha512"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/base64"
 	"encoding/pem"
 	"errors"
 	"flag"
@@ -404,6 +402,7 @@ func checkAuth(w http.ResponseWriter, r *http.Request) bool {
 	if AUTH {
 		user, pass, ok := r.BasicAuth()
 		if !ok || (user != USER || !checkPass(pass, PASS)) {
+			time.Sleep(1 * time.Second) // slow down brute force attacks
 			return false
 		}
 	}
@@ -884,8 +883,6 @@ func writeCertFile(name string, data []byte) error {
 /*
 getPass - Get password interactively from stdin,
 keep retrying until input matches.
-NOTE: We could probably come up with a better way to hash passwords,
-but IDK if it really matters.
 */
 func getPass() string {
 	reader := bufio.NewReader(os.Stdin)
@@ -899,17 +896,11 @@ func getPass() string {
 		fmt.Print("Enter password again: ")
 		p2, _ = reader.ReadString('\n')
 	}
-
-	sha512 := sha512.New()
-	sha512.Write([]byte(strings.TrimSpace(p1)))
-
-	return base64.StdEncoding.EncodeToString(sha512.Sum(nil))
+	
+	return strings.TrimSpace(p1)
 }
 
 // checkPass checks the input password against the one setup on cmd line.
-func checkPass(input, password string) bool {
-	sha := sha512.New()
-	sha.Write([]byte(input))
-	inpass := base64.StdEncoding.EncodeToString(sha.Sum(nil))
+func checkPass(inpass string, password string) bool {
 	return inpass == password
 }
